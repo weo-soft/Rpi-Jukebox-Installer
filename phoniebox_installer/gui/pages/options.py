@@ -5,11 +5,11 @@ import threading
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QLabel, QVBoxLayout, QHBoxLayout, QLineEdit,
-    QCheckBox, QComboBox, QGroupBox, QScrollArea, QWidget, QCompleter,
+    QComboBox, QGroupBox, QScrollArea, QWidget, QCompleter,
 )
 
 from phoniebox_installer.gui.pages.base import BasePage
-from phoniebox_installer.gui.widgets import CollapsibleGroupBox
+from phoniebox_installer.gui.widgets import CollapsibleGroupBox, CustomCheckBox
 from phoniebox_installer.util.validation import parse_github_branch_url
 from phoniebox_installer.util.network import fetch_github_branches
 
@@ -154,7 +154,7 @@ class OptionsPage(BasePage):
         services_layout = QVBoxLayout(services_group)
 
         rfid_row = QHBoxLayout()
-        self._rfid_checkbox = QCheckBox("RFID Reader")
+        self._rfid_checkbox = CustomCheckBox("RFID Reader")
         self._rfid_checkbox.setChecked(True)
         rfid_row.addWidget(self._rfid_checkbox)
         self._rfid_reader_combo = QComboBox()
@@ -195,7 +195,7 @@ class OptionsPage(BasePage):
         self._wire_dependencies()
 
     def _add_checkbox(self, layout, label, default):
-        cb = QCheckBox(label)
+        cb = CustomCheckBox(label)
         cb.setChecked(default)
         layout.addWidget(cb)
         return cb

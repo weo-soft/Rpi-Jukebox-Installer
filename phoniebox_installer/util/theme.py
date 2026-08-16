@@ -46,8 +46,8 @@ def get_app_stylesheet() -> str:
 
     The flat Fusion palette alone leaves buttons nearly indistinguishable from
     the light window background, so we add borders, hover/pressed states and
-    contrast here. Checkbox/radio indicators are left to the native Fusion
-    style (which draws its own checkmark/dot).
+    contrast here. Checkboxes are painted by ``CustomCheckBox`` (self-painted
+    indicator); the plain color/spacing rule below does not interfere with it.
     """
     css = """
         QMainWindow {

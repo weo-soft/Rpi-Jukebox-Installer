@@ -26,7 +26,9 @@ def test_apply_light_theme_adds_button_contour(qapp):
     """The global stylesheet gives buttons a visible border.
 
     Checkbox/radio indicators are intentionally left unstyled so Qt draws the
-    native Fusion checkmark/dot (no image files involved).
+    native Fusion checkmark/dot (no image files involved). The app's checkboxes
+    use the self-painted ``CustomCheckBox``; the plain color/spacing rule does
+    not interfere with it.
     """
     css = get_app_stylesheet()
     assert "QPushButton" in css

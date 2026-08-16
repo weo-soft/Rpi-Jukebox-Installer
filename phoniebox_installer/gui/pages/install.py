@@ -6,12 +6,13 @@ from urllib.parse import urlparse
 
 from PySide6.QtWidgets import (
     QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QProgressBar,
-    QPlainTextEdit, QCheckBox,
+    QPlainTextEdit,
 )
 from PySide6.QtCore import QTimer, Signal, QUrl
 from PySide6.QtGui import QDesktopServices
 
 from phoniebox_installer.gui.pages.base import BasePage
+from phoniebox_installer.gui.widgets import CustomCheckBox
 from phoniebox_installer.app.events import InstallEvents
 
 #: Seconds the page waits after a successful install before auto-rebooting.
@@ -101,7 +102,7 @@ class InstallPage(BasePage):
         log_row = QHBoxLayout()
         log_row.addWidget(QLabel("Live Log:"))
         log_row.addStretch()
-        self._details_checkbox = QCheckBox("Details")
+        self._details_checkbox = CustomCheckBox("Details")
         self._details_checkbox.toggled.connect(self._on_details_toggled)
         log_row.addWidget(self._details_checkbox)
         layout.addLayout(log_row)

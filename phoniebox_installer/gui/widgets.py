@@ -1,7 +1,8 @@
 """Reusable custom Qt widgets."""
 
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QGroupBox, QToolButton, QVBoxLayout, QWidget
+from PySide6.QtCore import QPointF, QRectF, Qt
+from PySide6.QtGui import QColor, QPainter, QPen, QPolygonF
+from PySide6.QtWidgets import QCheckBox, QGroupBox, QToolButton, QVBoxLayout, QWidget
 
 
 class CollapsibleGroupBox(QGroupBox):
@@ -60,3 +61,84 @@ class CollapsibleGroupBox(QGroupBox):
     def _on_toggled(self, checked: bool):
         self._content.setVisible(checked)
         self._toggle.setArrowType(Qt.DownArrow if checked else Qt.RightArrow)
+
+
+class CustomCheckBox(QCheckBox):
+    """A checkbox with a self-painted indicator.
+
+    The Fusion style hardcodes a faint gray indicator border that the palette
+    cannot override, and styling ``QCheckBox::indicator`` in a stylesheet
+    replaces the native checkmark (which would then need a separate image).
+    This widget paints the box and the checkmark itself, so the border can be
+    tinted per state (e.g. blue when checked) without losing the checkmark and
+    without any image files.
+
+    Keyboard interaction, ``toggled()`` signals and state handling are
+    inherited unchanged from ``QCheckBox``.
+    """
+
+    #: Indicator side length in pixels.
+    INDICATOR_SIZE = 16
+
+    def _focus_line_span(self) -> "tuple[QPointF, QPointF]":
+        """Return start/end of the text underline used as the focus hint.
+
+        The line runs only underneath the actual text (measured via the
+        widget font) and is clamped to the widget bounds. An earlier focus
+        frame around the text looked like a box over the label; one around
+        the indicator extended past x=0 and (with antialiasing) corrupted
+        the whole rendering while focused.
+        """
+        x0 = self.INDICATOR_SIZE + 6
+        text_width = self.fontMetrics().horizontalAdvance(self.text())
+        x1 = min(x0 + text_width, self.width() - 1)
+        if x1 < x0:
+            x1 = x0  # widget too narrow for the text area -> zero-length line
+        y = self.height() - 2
+        return QPointF(x0, y), QPointF(x1, y)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        size = self.INDICATOR_SIZE
+        rect = QRectF(0, (self.height() - size) / 2.0, size, size)
+
+        if not self.isEnabled():
+            border = QColor("#c0c0c0")
+        elif self.isChecked():
+            border = QColor("#1976d2")
+        elif self.underMouse():
+            border = QColor("#64b5f6")  # subtle hover hint (not the checked blue)
+        else:
+            border = QColor("#9c9c9c")
+
+        painter.setBrush(QColor("#ffffff"))
+        painter.setPen(QPen(border, 1.5))
+        painter.drawRoundedRect(rect, 3, 3)
+
+        if self.isChecked() and self.isEnabled():
+            pen = QPen(border, 2.0)
+            pen.setCapStyle(Qt.RoundCap)
+            pen.setJoinStyle(Qt.RoundJoin)
+            painter.setPen(pen)
+            points = [
+                QPointF(rect.left() + 3.5, rect.center().y() + 1.0),
+                QPointF(rect.center().x() - 1.0, rect.bottom() - 3.5),
+                QPointF(rect.right() - 3.0, rect.top() + 4.0),
+            ]
+            painter.drawPolyline(QPolygonF(points))
+
+        # Text (consistent with the forced light theme).
+        text = QColor("#333333" if self.isEnabled() else "#999999")
+        text_rect = QRectF(size + 6, 0, self.width() - size - 6, self.height())
+        painter.setPen(text)
+        painter.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, self.text())
+
+        # Focus hint: a short underline beneath the text (see _focus_line_span).
+        if self.hasFocus():
+            start, end = self._focus_line_span()
+            painter.setPen(QPen(QColor("#1976d2"), 1))
+            painter.drawLine(start, end)
+
+        painter.end()

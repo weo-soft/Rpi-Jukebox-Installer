@@ -2,10 +2,11 @@
 
 from PySide6.QtWidgets import (
     QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit,
-    QCheckBox, QFileDialog, QMessageBox, QScrollArea, QWidget,
+    QFileDialog, QMessageBox, QScrollArea, QWidget,
 )
 
 from phoniebox_installer.gui.pages.base import BasePage
+from phoniebox_installer.gui.widgets import CustomCheckBox
 from phoniebox_installer.app.events import SshEvents, WizardEvents, CheckEvents
 from phoniebox_installer.installer.checks import CHECKS
 
@@ -50,7 +51,7 @@ class SshCredentialsPage(BasePage):
         self._password_input = QLineEdit()
         self._password_input.setEchoMode(QLineEdit.Password)
         pw_row.addWidget(self._password_input)
-        self._show_pw_checkbox = QCheckBox("Show")
+        self._show_pw_checkbox = CustomCheckBox("Show")
         self._show_pw_checkbox.toggled.connect(self._toggle_password_visibility)
         pw_row.addWidget(self._show_pw_checkbox)
         layout.addLayout(pw_row)
