@@ -73,3 +73,22 @@ def test_on_leave_writes_to_state(qapp):
     page.on_leave()
     assert page.state.target_host == "192.168.1.100"
     assert page.state.target_hostname == "raspberrypi"
+
+
+def test_double_click_selects_device_and_advances(qapp):
+    """Double-clicking an entry selects it and publishes a wizard advance."""
+    page = _make_page()
+    device = DeviceInfo(ip_address="192.168.1.100", hostname="raspberrypi")
+    page._devices.append(device)
+    item = QListWidgetItem("raspberrypi — 192.168.1.100")
+    page._device_list.addItem(item)
+
+    advances = []
+    page.event_bus.subscribe(
+        "wizard.advance", lambda payload: advances.append(payload)
+    )
+
+    page._device_list.itemDoubleClicked.emit(item)
+
+    assert page._selected_device is device
+    assert advances == [{"page_id": "discover"}]

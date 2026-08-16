@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
 )
 
 from phoniebox_installer.gui.pages.base import BasePage
-from phoniebox_installer.app.events import DiscoveryEvents
+from phoniebox_installer.app.events import DiscoveryEvents, WizardEvents
 
 
 class DiscoverPage(BasePage):
@@ -44,6 +44,7 @@ class DiscoverPage(BasePage):
 
         self._device_list = QListWidget()
         self._device_list.itemClicked.connect(self._on_device_selected)
+        self._device_list.itemDoubleClicked.connect(self._on_device_double_clicked)
         auto_layout.addWidget(self._device_list)
 
         layout.addWidget(auto_group)
@@ -82,6 +83,15 @@ class DiscoverPage(BasePage):
     def _on_device_selected(self, item):
         idx = self._device_list.row(item)
         self._selected_device = self._devices[idx]
+
+    def _on_device_double_clicked(self, item):
+        """Select the device and advance to the next page.
+
+        A double-click is a shortcut for "pick this device and continue":
+        the wizard validates the page (selection now present) and moves on.
+        """
+        self._on_device_selected(item)
+        self.event_bus.publish(WizardEvents.ADVANCE, {"page_id": self.page_id})
 
     def on_enter(self):
         self.event_bus.subscribe(DiscoveryEvents.DEVICE_FOUND, self._on_device_found)
