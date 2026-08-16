@@ -6,22 +6,9 @@ on:
       - 'v*'
 
 jobs:
-  build:
-    name: Build ${{ matrix.artifact }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-2022
-            artifact: phoniebox-installer.exe
-            build_cmd: pyinstaller packaging/windows/phoniebox-installer.spec
-            files: dist/Phoniebox-Installer.exe
-          - os: ubuntu-24.04
-            artifact: phoniebox-installer.AppImage
-            build_cmd: bash packaging/linux/build_appimage.sh
-            files: Phoniebox-Installer-*.AppImage
-
-    runs-on: ${{ matrix.os }}
+  build-windows:
+    name: Build phoniebox-installer.exe
+    runs-on: windows-2022
 
     permissions:
       contents: write
@@ -38,19 +25,66 @@ jobs:
         run: pip install -r requirements-dev.txt
 
       - name: Build
-        env:
-          # Run appimagetool without FUSE (Ubuntu 24.04 CI).
-          APPIMAGE_EXTRACT_AND_RUN: '1'
-        run: ${{ matrix.build_cmd }}
+        run: pyinstaller packaging/windows/phoniebox-installer.spec
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: phoniebox-installer-${{ matrix.os }}
-          path: ${{ matrix.files }}
+          name: phoniebox-installer-windows
+          path: dist/Phoniebox-Installer.exe
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ matrix.files }}
+          files: dist/Phoniebox-Installer.exe
+
+  build-appimage:
+    # The AppImage is built inside a Debian 12 container so the result is
+    # deterministic and independent of the runner image. The containerized
+    # build is used ONLY in CI here; running build_appimage.sh locally builds
+    # on whatever Linux system the developer is on.
+    name: Build AppImage (container)
+    runs-on: ubuntu-24.04
+    container: debian:12
+
+    permissions:
+      contents: write
+
+    steps:
+      # git must be installed before actions/checkout can run in the container.
+      # `file` is required by appimagetool (it inspects the built binary).
+      - name: Install system packages
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            git wget ca-certificates patchelf binutils file curl \
+            libglib2.0-0 libfontconfig1 libdbus-1-3 libsystemd0 \
+            libxkbcommon0 libgl1 libegl1
+
+      - uses: actions/checkout@v4
+
+      - name: Create venv and install dependencies
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          export PATH="$HOME/.local/bin:$PATH"
+          uv python install 3.14
+          uv venv --python 3.14 .venv
+          uv pip install --python .venv/bin/python -r requirements-dev.txt
+
+      - name: Build AppImage
+        env:
+          # appimagetool is itself an AppImage; containers have no FUSE.
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+        run: bash packaging/linux/build_appimage.sh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: phoniebox-installer-appimage
+          path: Phoniebox-Installer-*.AppImage
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Phoniebox-Installer-*.AppImage
 

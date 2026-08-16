@@ -44,24 +44,46 @@ jobs:
           QT_QPA_PLATFORM: offscreen   # headless CI: Qt braucht kein Display
         run: pytest -v --cov=phoniebox_installer --cov-report=term
 
-  build-check:
-    name: Build Check
+  build-appimage:
+    # The real AppImage build runs in a Debian 12 container: deterministic
+    # and independent of the runner image. The containerized build is used
+    # ONLY in CI here; building build_appimage.sh locally uses the
+    # developer's own system.
+    name: Build AppImage (container)
     runs-on: ubuntu-24.04
+    container: debian:12
     needs: test
+
     steps:
+      # git must be installed before actions/checkout can run in the container.
+      # `file` is required by appimagetool (it inspects the built binary).
+      - name: Install system packages
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            git wget ca-certificates patchelf binutils file curl \
+            libglib2.0-0 libfontconfig1 libdbus-1-3 libsystemd0 \
+            libxkbcommon0 libgl1 libegl1
+
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Create venv and install dependencies
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          export PATH="$HOME/.local/bin:$PATH"
+          uv python install 3.14
+          uv venv --python 3.14 .venv
+          uv pip install --python .venv/bin/python -r requirements-dev.txt
+
+      - name: Build AppImage
+        env:
+          # appimagetool is itself an AppImage; containers have no FUSE.
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+        run: bash packaging/linux/build_appimage.sh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: |
-          pip install -r requirements-dev.txt
-
-      - name: PyInstaller build check
-        run: |
-          pyinstaller --onefile --name phoniebox-installer \
-            --add-data "phoniebox_installer/resources:phoniebox_installer/resources" \
-            phoniebox_installer/main.py
+          name: phoniebox-installer-appimage
+          path: Phoniebox-Installer-*.AppImage
+          retention-days: 14
