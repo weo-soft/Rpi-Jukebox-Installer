@@ -57,8 +57,13 @@ class OptionsPage(BasePage):
         self._git_url_input.setPlaceholderText(
             "https://github.com/<owner>/RPi-Jukebox-RFID/tree/<branch>"
         )
-        self._git_url_input.editingFinished.connect(self._on_url_changed)
+        self._git_url_input.textChanged.connect(self._on_url_text_changed)
         source_layout.addWidget(self._git_url_input)
+        self._url_hint_label = QLabel("")
+        self._url_hint_label.setWordWrap(True)
+        self._url_hint_label.setStyleSheet("color: #b04a00;")
+        self._url_hint_label.setVisible(False)
+        source_layout.addWidget(self._url_hint_label)
         source_layout.addWidget(QLabel("Git Project/Fork:"))
         self._git_fork_input = QLineEdit("MiczFlor")
         source_layout.addWidget(self._git_fork_input)
@@ -184,18 +189,41 @@ class OptionsPage(BasePage):
         if idx >= 0:
             combo.setCurrentIndex(idx)
 
-    def _on_url_changed(self):
-        """Fill fork + branch fields from a pasted GitHub branch URL."""
-        url = self._git_url_input.text().strip()
+    def _on_url_text_changed(self, text):
+        """Auto-fill fork + branch as soon as a valid branch URL is entered."""
+        url = text.strip()
         if not url:
+            self._clear_url_hint()
             return
+
         parsed = parse_github_branch_url(url)
         if parsed is None:
+            self._show_url_hint(
+                "⚠️ Invalid URL — expected "
+                "https://github.com/<owner>/RPi-Jukebox-RFID/tree/<branch>"
+            )
             return
-        owner, _, branch = parsed
+
+        owner, repo, branch = parsed
+        if repo != "RPi-Jukebox-RFID":
+            self._show_url_hint(
+                f"⚠️ URL points to repository '{repo}', but the installer "
+                "installs RPi-Jukebox-RFID."
+            )
+            return
+
         self._git_fork_input.setText(owner)
         if branch:
             self._git_branch_input.setText(branch)
+        self._clear_url_hint()
+
+    def _show_url_hint(self, message):
+        self._url_hint_label.setText(message)
+        self._url_hint_label.setVisible(True)
+
+    def _clear_url_hint(self):
+        self._url_hint_label.setText("")
+        self._url_hint_label.setVisible(False)
 
     def validate(self):
         if not self._git_fork_input.text().strip():

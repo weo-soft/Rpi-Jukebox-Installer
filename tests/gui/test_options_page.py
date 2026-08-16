@@ -83,15 +83,40 @@ def test_rfid_module_required_when_enabled(qapp):
 
 
 def test_branch_url_fills_fork_and_branch(qapp):
-    """A pasted branch URL auto-fills the fork and branch fields."""
+    """Entering a branch URL auto-fills the fork and branch fields."""
     page = _make_page()
     page._git_url_input.setText(
         "https://github.com/weo-soft/RPi-Jukebox-RFID/"
         "tree/future3/feature/installer-noninteractive-config"
     )
-    page._on_url_changed()
     assert page._git_fork_input.text() == "weo-soft"
     assert page._git_branch_input.text() == "future3/feature/installer-noninteractive-config"
+    assert page._url_hint_label.isHidden()
+
+
+def test_invalid_url_shows_hint(qapp):
+    """A non-URL input shows a warning hint at the field."""
+    page = _make_page()
+    page._git_url_input.setText("not-a-url")
+    assert not page._url_hint_label.isHidden()
+    assert "Invalid URL" in page._url_hint_label.text()
+
+
+def test_wrong_repo_url_shows_hint(qapp):
+    """A URL for a different repository shows a warning hint."""
+    page = _make_page()
+    page._git_url_input.setText("https://github.com/weo-soft/SomeOtherRepo/tree/main")
+    assert not page._url_hint_label.isHidden()
+    assert "SomeOtherRepo" in page._url_hint_label.text()
+
+
+def test_clearing_url_hides_hint(qapp):
+    """Clearing the URL field hides the warning hint again."""
+    page = _make_page()
+    page._git_url_input.setText("not-a-url")
+    assert not page._url_hint_label.isHidden()
+    page._git_url_input.setText("")
+    assert page._url_hint_label.isHidden()
 
 
 def test_validate_rejects_invalid_url(qapp):
