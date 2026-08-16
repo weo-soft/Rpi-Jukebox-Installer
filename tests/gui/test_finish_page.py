@@ -27,7 +27,7 @@ def test_success_ui_shows_webapp_url(qapp):
     page.on_enter()
     assert "Installation Complete" in page._headline.text()
     assert "http://192.168.1.100" in page._webapp_link.text()
-    assert page._webapp_link.isVisible()
+    assert not page._webapp_link.isHidden()
 
 
 def test_failure_ui_shows_error(qapp):
@@ -38,7 +38,7 @@ def test_failure_ui_shows_error(qapp):
     page.on_enter()
     assert "Installation Failed" in page._headline.text()
     assert "Connection lost during apt-get update" in page._error_label.text()
-    assert not page._webapp_link.isVisible()
+    assert page._webapp_link.isHidden()
 
 
 def test_restart_checkbox_sends_reboot(qapp):

@@ -138,15 +138,14 @@ class TestWizard:
 
         def make_page(page_id):
             class _P(BasePage):
-                page_id = page_id
-                title = page_id
-
                 def on_enter(self):
                     events.append(f"enter:{page_id}")
 
                 def on_leave(self):
                     events.append(f"leave:{page_id}")
 
+            _P.page_id = page_id
+            _P.title = page_id
             return _P
 
         wizard = _make_wizard(page_classes=[make_page("x"), make_page("y")])

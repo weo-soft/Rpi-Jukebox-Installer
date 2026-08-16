@@ -16,8 +16,8 @@ def test_app_import():
 
 def test_main_window_creation(qapp):
     """Verify the main window can be created without errors."""
-    from phoniebox_installer.main import MainWindow
-    window = MainWindow()
+    from phoniebox_installer.main import MainWindow, get_controller
+    window = MainWindow(get_controller())
     assert window.windowTitle() == "Phoniebox Installer"
     assert window.width() == 800
     assert window.height() == 600
