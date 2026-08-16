@@ -89,6 +89,9 @@ class _FakeClient:
     def add(self, hostname, keytype, key):
         pass
 
+    def pop(self, hostname, default=None):
+        pass
+
     def connect(self, *args, **kwargs):
         if self._connect_exc is not None:
             raise self._connect_exc
@@ -117,6 +120,66 @@ class _FakeTransport:
 
     def send_ignore(self):
         pass
+
+
+class _FakeKey:
+    """Minimal fake paramiko key for host-key-change tests."""
+
+    def get_name(self):
+        return "ssh-ed25519"
+
+    def asbytes(self):
+        return b"fake-key-bytes"
+
+    def get_base64(self):
+        return "ZmFrZS1rZXk="
+
+
+class _KeyStoreClient:
+    """Fake client modelling paramiko's persistent known_hosts behaviour.
+
+    ``disk`` is a shared dict (host -> key) standing in for the on-disk
+    known_hosts file, so a retry that re-loads from disk sees the accepted key.
+    """
+
+    def __init__(self, disk, server_key):
+        self._disk = disk
+        self._server_key = server_key
+        self._keys = {}
+        self.saved_paths = []
+        self.closed = False
+
+    def set_missing_host_key_policy(self, policy):
+        self._policy = policy
+
+    def load_host_keys(self, path):
+        self._keys = dict(self._disk)
+
+    def save_host_keys(self, path):
+        self.saved_paths.append(str(path))
+        self._disk.clear()
+        self._disk.update(self._keys)
+
+    def get_host_keys(self):
+        return self
+
+    def pop(self, host, default=None):
+        return self._keys.pop(host, default)
+
+    def add(self, host, keytype, key):
+        self._keys[host] = key
+
+    def connect(self, *args, **kwargs):
+        host = args[0] if args else kwargs.get("host")
+        stored = self._keys.get(host)
+        if stored is not None and stored is not self._server_key:
+            raise paramiko.BadHostKeyException(host, self._server_key, stored)
+
+    def get_transport(self):
+        return None
+
+    def close(self):
+        self.closed = True
 
 
 class TestSshConnection:
@@ -255,3 +318,63 @@ class TestSshConnection:
         mgr.stream_command("tail -f /x", on_line=collected.append, stop_event=stop)
 
         assert collected == ["hello", "world"]
+
+    def test_host_key_changed_can_be_overridden(self, qapp, tmp_path, monkeypatch):
+        """A changed host key prompts; accepting replaces it and connects."""
+        bad_key = _FakeKey()
+        clients = [
+            _FakeClient(connect_exc=paramiko.BadHostKeyException("h", bad_key, bad_key)),
+            _FakeClient(),  # retry succeeds
+        ]
+        monkeypatch.setattr(paramiko, "SSHClient", lambda: clients.pop(0))
+
+        bus = EventBus()
+        mgr = SshConnectionManager(bus, known_hosts_path=tmp_path / "known_hosts")
+
+        connected = []
+        bus.subscribe(SshEvents.CONNECTED, connected.append)
+        bus.subscribe(SshEvents.HOST_KEY_CHANGED, lambda p: mgr.confirm_host_key(True))
+
+        mgr.connect("1.2.3.4", user="pi", password="pw")
+
+        assert _pump_until(lambda: bool(connected))
+        assert connected[0]["host"] == "1.2.3.4"
+        mgr.disconnect()
+
+    def test_host_key_changed_persists_and_connects_without_second_prompt(
+        self, qapp, tmp_path, monkeypatch
+    ):
+        """Regression: accepting a changed host key persists it, so the retry
+        connects without prompting a second time (previously: double prompt
+        followed by a permanent "Connecting..." hang)."""
+        host = "1.2.3.4"
+        stale_key = _FakeKey()
+        server_key = _FakeKey()
+        disk = {host: stale_key}
+
+        known_hosts = tmp_path / "known_hosts"
+        known_hosts.write_text("")  # file exists → load_host_keys() is called
+
+        monkeypatch.setattr(
+            paramiko, "SSHClient",
+            lambda: _KeyStoreClient(disk, server_key),
+        )
+
+        bus = EventBus()
+        mgr = SshConnectionManager(bus, known_hosts_path=known_hosts)
+
+        connected = []
+        prompts = []
+        bus.subscribe(SshEvents.CONNECTED, connected.append)
+        bus.subscribe(
+            SshEvents.HOST_KEY_CHANGED,
+            lambda p: (prompts.append(p), mgr.confirm_host_key(True)),
+        )
+
+        mgr.connect(host, user="pi", password="pw")
+
+        assert _pump_until(lambda: bool(connected))
+        assert len(prompts) == 1
+        assert connected[0]["host"] == host
+        assert disk[host] is server_key
+        mgr.disconnect()

@@ -57,6 +57,9 @@ class Wizard(QWidget):
         # Build UI
         self._setup_ui(page_classes)
 
+        # Allow pages to auto-advance (e.g. SSH page after a successful test).
+        self._event_bus.subscribe(WizardEvents.ADVANCE, self._on_advance)
+
     def _setup_ui(self, page_classes):
         """Create the wizard layout with navigation and page stack."""
         main_layout = QVBoxLayout(self)
@@ -194,7 +197,8 @@ class Wizard(QWidget):
         # Validate current page
         is_valid, error_msg = page.validate()
         if not is_valid:
-            QMessageBox.warning(self, "Validation Error", error_msg)
+            if error_msg:
+                QMessageBox.warning(self, "Validation Error", error_msg)
             return
 
         is_last = (self._current_index == len(self._pages) - 1)
@@ -231,6 +235,15 @@ class Wizard(QWidget):
         if reply == QMessageBox.Yes:
             self.cancelled.emit()
             logger.info("Wizard cancelled by user")
+
+    def _on_advance(self, payload: dict):
+        """Advance one page (requested by a page, e.g. SSH auto-advance)."""
+        if self._current_index < 0:
+            return
+        page_id = payload.get("page_id")
+        if page_id and self.current_page().page_id != page_id:
+            return
+        self._on_next()
 
     def _page_index(self, page_id: str) -> int:
         """Return the 0-based index of a page by its page_id (or -1)."""

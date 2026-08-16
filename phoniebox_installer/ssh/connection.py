@@ -24,6 +24,12 @@ logger = logging.getLogger(__name__)
 DEFAULT_KNOWN_HOSTS = Path.home() / ".phoniebox-installer" / "known_hosts"
 
 
+def _fingerprint(key) -> str:
+    """SHA256 fingerprint of a host key (base64, without padding)."""
+    digest = hashlib.sha256(key.asbytes()).digest()
+    return base64.b64encode(digest).rstrip(b"=").decode()
+
+
 class _TrustOnFirstUsePolicy(paramiko.MissingHostKeyPolicy):
     """TOFU policy: ask the user (via EventBus) and persist accepted keys."""
 
@@ -299,94 +305,152 @@ class SshConnectionManager:
         self, host: str, port: int, user: str,
         password: str, key_filename: Optional[str],
     ):
-        """Background thread: establish SSH connection (TOFU host keys)."""
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(_TrustOnFirstUsePolicy(self))
+        """Background thread: establish SSH connection (TOFU host keys).
 
-        self._host_key_rejected = False
-        self._known_hosts_path.parent.mkdir(parents=True, exist_ok=True)
-        if self._known_hosts_path.is_file():
+        If the stored host key no longer matches (e.g. after re-flashing the
+        Pi), the user is asked whether to accept the new key; if accepted, the
+        connection is retried once with the new key.
+        """
+        for _attempt in range(2):
+            client = paramiko.SSHClient()
+            client.set_missing_host_key_policy(_TrustOnFirstUsePolicy(self))
+
+            self._host_key_rejected = False
+            self._known_hosts_path.parent.mkdir(parents=True, exist_ok=True)
+            if self._known_hosts_path.is_file():
+                try:
+                    client.load_host_keys(str(self._known_hosts_path))
+                except OSError as e:
+                    logger.warning(f"Could not load known_hosts: {e}")
+
             try:
-                client.load_host_keys(str(self._known_hosts_path))
-            except OSError as e:
-                logger.warning(f"Could not load known_hosts: {e}")
+                # Determine auth method
+                if key_filename:
+                    client.connect(
+                        host, port=port, username=user,
+                        key_filename=key_filename,
+                        timeout=15,
+                        banner_timeout=10,
+                        auth_timeout=15,
+                        look_for_keys=False,
+                        allow_agent=False,
+                    )
+                elif password:
+                    client.connect(
+                        host, port=port, username=user,
+                        password=password,
+                        timeout=15,
+                        banner_timeout=10,
+                        auth_timeout=15,
+                        look_for_keys=True,
+                    )
+                else:
+                    # Try default SSH key
+                    client.connect(
+                        host, port=port, username=user,
+                        timeout=15,
+                        banner_timeout=10,
+                        auth_timeout=15,
+                        look_for_keys=True,
+                    )
 
-        try:
-            # Determine auth method
-            if key_filename:
-                client.connect(
-                    host, port=port, username=user,
-                    key_filename=key_filename,
-                    timeout=15,
-                    banner_timeout=10,
-                    auth_timeout=15,
-                    look_for_keys=False,
-                    allow_agent=False,
-                )
-            elif password:
-                client.connect(
-                    host, port=port, username=user,
-                    password=password,
-                    timeout=15,
-                    banner_timeout=10,
-                    auth_timeout=15,
-                    look_for_keys=True,
-                )
-            else:
-                # Try default SSH key
-                client.connect(
-                    host, port=port, username=user,
-                    timeout=15,
-                    banner_timeout=10,
-                    auth_timeout=15,
-                    look_for_keys=True,
-                )
+                self._client = client
+                self._connected = True
+                self._start_keep_alive()
 
-            self._client = client
-            self._connected = True
-            self._start_keep_alive()
+                # Persist newly accepted host keys (TOFU).
+                try:
+                    client.save_host_keys(str(self._known_hosts_path))
+                except OSError as e:
+                    logger.warning(f"Could not save known_hosts: {e}")
 
-            # Persist newly accepted host keys (TOFU).
-            try:
-                client.save_host_keys(str(self._known_hosts_path))
-            except OSError as e:
-                logger.warning(f"Could not save known_hosts: {e}")
+                self._event_bus.publish(SshEvents.CONNECTED, {
+                    "host": host,
+                    "port": port,
+                    "user": user,
+                })
+                logger.info(f"SSH connected: {user}@{host}:{port}")
+                return
 
-            self._event_bus.publish(SshEvents.CONNECTED, {
-                "host": host,
-                "port": port,
-                "user": user,
-            })
-            logger.info(f"SSH connected: {user}@{host}:{port}")
+            except paramiko.BadHostKeyException as e:
+                # Host key changed (e.g. re-flashed Pi). Offer to accept the
+                # new key and retry once.
+                logger.warning(f"SSH host key changed for {host}: {e}")
+                if not self._prompt_replace_host_key(client, host, e):
+                    return
+                # accepted: loop and retry with a fresh client
 
-        except paramiko.BadHostKeyException as e:
-            logger.error(f"SSH host key changed: {e}")
-            self._event_bus.publish(SshEvents.HOST_KEY_CHANGED, {
-                "host": host,
-                "reason": str(e),
-            })
-        except paramiko.AuthenticationException as e:
-            logger.warning(f"SSH auth failed: {e}")
-            self._event_bus.publish(SshEvents.AUTH_FAILED, {
-                "host": host,
-                "reason": str(e),
-            })
-        except paramiko.SSHException as e:
-            if self._host_key_rejected:
-                logger.info("SSH host key rejected by user")
-                self._event_bus.publish(SshEvents.HOST_KEY_REJECTED, {"host": host})
-            else:
-                logger.error(f"SSH error: {e}")
+            except paramiko.AuthenticationException as e:
+                logger.warning(f"SSH auth failed: {e}")
+                self._event_bus.publish(SshEvents.AUTH_FAILED, {
+                    "host": host,
+                    "reason": str(e),
+                })
+                return
+
+            except paramiko.SSHException as e:
+                if self._host_key_rejected:
+                    logger.info("SSH host key rejected by user")
+                    self._event_bus.publish(SshEvents.HOST_KEY_REJECTED, {"host": host})
+                else:
+                    logger.error(f"SSH error: {e}")
+                    self._event_bus.publish(SshEvents.ERROR, {
+                        "host": host,
+                        "error": str(e),
+                    })
+                return
+
+            except Exception as e:
+                logger.error(f"SSH connection failed: {e}")
                 self._event_bus.publish(SshEvents.ERROR, {
                     "host": host,
-                    "error": str(e),
+                    "error": f"Connection failed: {str(e)}",
                 })
-        except Exception as e:
-            logger.error(f"SSH connection failed: {e}")
-            self._event_bus.publish(SshEvents.ERROR, {
-                "host": host,
-                "error": f"Connection failed: {str(e)}",
-            })
+                return
+
+    def _prompt_replace_host_key(self, client, host, key_exc) -> bool:
+        """Ask the user whether to accept a changed host key.
+
+        Returns True if accepted — the stale key is replaced by the new one in
+        the client's key store and persisted to disk, so the retry (which uses
+        a fresh client) succeeds without another prompt.
+        """
+        new_key = key_exc.key
+
+        self._host_key_decision.clear()
+        self._host_key_accepted = False
+        self._host_key_rejected = False
+
+        self._event_bus.publish(SshEvents.HOST_KEY_CHANGED, {
+            "host": host,
+            "key_type": new_key.get_name(),
+            "fingerprint": _fingerprint(new_key),
+            "reason": str(key_exc),
+        })
+
+        if not self._host_key_decision.wait(timeout=120.0):
+            self._host_key_rejected = True
+            self._event_bus.publish(SshEvents.HOST_KEY_REJECTED, {"host": host})
+            return False
+        if not self._host_key_accepted:
+            self._host_key_rejected = True
+            self._event_bus.publish(SshEvents.HOST_KEY_REJECTED, {"host": host})
+            return False
+
+        # Accepted: replace the stale entry with the new key and persist it
+        # immediately. The retry in _connect_thread() creates a fresh client
+        # that re-loads known_hosts from disk, so an in-memory-only update
+        # would reproduce the same BadHostKeyException (double prompt) and,
+        # after the second accept, end the retry loop without connecting.
+        try:
+            keys = client.get_host_keys()
+            keys.pop(host, None)
+            keys.add(host, new_key.get_name(), new_key)
+            client.save_host_keys(str(self._known_hosts_path))
+        except OSError as e:
+            logger.warning(f"Failed to persist accepted host key: {e}")
+
+        return True
 
     def _start_keep_alive(self):
         """Start a background thread that sends periodic keep-alive pings."""

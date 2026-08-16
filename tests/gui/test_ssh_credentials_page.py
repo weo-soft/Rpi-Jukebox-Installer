@@ -27,13 +27,18 @@ def _make_page(controller=None):
     return SshCredentialsPage(state, bus, controller=controller)
 
 
-def test_validate_fails_before_test_connection(qapp):
-    """validate() blocks until the connection has been tested."""
-    page = _make_page()
+def test_validate_auto_tests_connection(qapp):
+    """validate() with untested credentials triggers an automatic test."""
+    controller = _FakeController()
+    page = _make_page(controller=controller)
     page._username_input.setText("pi")
     page._password_input.setText("secret")
-    valid, _ = page.validate()
+
+    valid, msg = page.validate()
+
     assert valid is False
+    assert msg == ""  # silent block — no "test manually" prompt
+    assert controller.test_calls == 1
 
 
 def test_validate_fails_with_empty_username(qapp):
@@ -125,8 +130,29 @@ def test_host_key_confirm_calls_controller(qapp, monkeypatch):
     assert controller.host_key_confirms == [False]
 
 
-def test_host_key_changed_shows_error(qapp):
-    """HOST_KEY_CHANGED → warning in the status label."""
-    page = _make_page()
-    page._on_host_key_changed({"host": "1.2.3.4"})
-    assert "Host key changed" in page._status_label.text()
+def test_host_key_changed_shows_prompt(qapp, monkeypatch):
+    """HOST_KEY_CHANGED → prompt; 'Yes' accepts the new key."""
+    controller = _FakeController()
+    page = _make_page(controller=controller)
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **k: QMessageBox.Yes)
+
+    page._on_host_key_changed(
+        {"host": "1.2.3.4", "key_type": "ssh-ed25519", "fingerprint": "abc"}
+    )
+
+    assert controller.host_key_confirms == [True]
+
+
+def test_connected_auto_advances_when_pending(qapp):
+    """CONNECTED with a pending auto-advance publishes WizardEvents.ADVANCE."""
+    from phoniebox_installer.app.events import WizardEvents
+    bus = EventBus()
+    page = SshCredentialsPage(InstallerState(target_host="1.2.3.4"), bus)
+    page._pending_auto_advance = True
+
+    received = []
+    bus.subscribe(WizardEvents.ADVANCE, received.append)
+    page._on_connected({"host": "1.2.3.4"})
+    QCoreApplication.processEvents()
+
+    assert received == [{"page_id": "ssh"}]

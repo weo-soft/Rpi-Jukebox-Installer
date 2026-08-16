@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
 )
 
 from phoniebox_installer.gui.pages.base import BasePage
-from phoniebox_installer.app.events import SshEvents
+from phoniebox_installer.app.events import SshEvents, WizardEvents
 
 
 class SshCredentialsPage(BasePage):
@@ -16,6 +16,7 @@ class SshCredentialsPage(BasePage):
 
     def __init__(self, state, event_bus, controller=None, parent=None):
         super().__init__(state, event_bus, controller=controller, parent=parent)
+        self._pending_auto_advance = False
         self._setup_ui()
 
     def _setup_ui(self):
@@ -115,11 +116,16 @@ class SshCredentialsPage(BasePage):
 
     def _on_connected(self, payload):
         self._set_status(f"✅ Connected to {payload.get('host', '')}", "green")
+        if self._pending_auto_advance:
+            self._pending_auto_advance = False
+            self.event_bus.publish(WizardEvents.ADVANCE, {"page_id": self.page_id})
 
     def _on_auth_failed(self, payload):
+        self._pending_auto_advance = False
         self._set_status("❌ Authentication failed. Check credentials.", "red")
 
     def _on_error(self, payload):
+        self._pending_auto_advance = False
         self._set_status(f"⚠️ {payload.get('error', 'Connection error')}", "orange")
 
     def _on_host_key_unknown(self, payload):
@@ -137,12 +143,22 @@ class SshCredentialsPage(BasePage):
             self.controller.confirm_host_key(reply == QMessageBox.Yes)
 
     def _on_host_key_changed(self, payload):
-        self._set_status(
-            f"⚠️ Host key changed for {payload.get('host', '')} — possible MITM. Aborted.",
-            "orange",
+        reply = QMessageBox.question(
+            self,
+            "Host Key Changed",
+            f"The host key for '{payload.get('host', '')}' has changed.\n\n"
+            f"New key type: {payload.get('key_type', 'unknown')}\n"
+            f"New fingerprint (SHA256): {payload.get('fingerprint', 'unknown')}\n\n"
+            f"This can happen after re-flashing the Raspberry Pi's OS.\n"
+            f"Accept the new key and continue connecting?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
         )
+        if self.controller is not None:
+            self.controller.confirm_host_key(reply == QMessageBox.Yes)
 
     def _on_host_key_rejected(self, payload):
+        self._pending_auto_advance = False
         self._set_status("❌ Connection cancelled (host key not trusted).", "red")
 
     def validate(self):
@@ -151,7 +167,12 @@ class SshCredentialsPage(BasePage):
         if not self._password_input.text() and not self._key_input.text().strip():
             return (False, "Please enter a password or select an SSH key.")
         if not self.state.ssh_authenticated:
-            return (False, "Please test the connection before continuing.")
+            if not self._pending_auto_advance:
+                # Auto-test on "Next" instead of asking the user to test
+                # manually. The page advances automatically on success.
+                self._test_connection()
+                self._pending_auto_advance = True
+            return (False, "")
         return (True, "")
 
     def on_leave(self):

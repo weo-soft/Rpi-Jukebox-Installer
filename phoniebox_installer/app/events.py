@@ -67,6 +67,7 @@ class WizardEvents:
     PAGE_CHANGED = "wizard.page_changed"
     CAN_VALIDATE = "wizard.can_validate"
     WIZARD_FINISHED = "wizard.finished"
+    ADVANCE = "wizard.advance"   # a page requests to advance (auto-advance)
 
 
 # =========================================================================
