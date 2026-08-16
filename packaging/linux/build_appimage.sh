@@ -3,12 +3,11 @@
 
 set -e
 
-# Activate the project venv if present and not already active, so that
+# Use the project venv if present and not already active, so that
 # `python` and `pyinstaller` resolve to the local environment.
-if [[ -z "${VIRTUAL_ENV:-}" && -x ".venv/bin/activate" ]]; then
-    echo "Activating .venv..."
-    # shellcheck disable=SC1091
-    source ".venv/bin/activate"
+if [[ -z "${VIRTUAL_ENV:-}" && -d ".venv/bin" ]]; then
+    export VIRTUAL_ENV="$(pwd)/.venv"
+    export PATH="$VIRTUAL_ENV/bin:$PATH"
 fi
 
 if ! command -v pyinstaller &>/dev/null; then
