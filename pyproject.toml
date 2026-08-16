@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "phoniebox-installer"
+version = "0.1.0"
+description = "Graphical installer for RPi-Jukebox-RFID (Phoniebox future3)"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+authors = [
+    {name = "Phoniebox Contributors"}
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: System :: Installation/Setup",
+]
+dependencies = [
+    "PySide6>=6.5.0",
+    "paramiko>=3.4.0",
+    "ruamel.yaml>=0.17.0",
+    "zeroconf>=0.130.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-qt>=4.2.0",
+    "pytest-cov>=4.1.0",
+    "flake8>=6.0.0",
+    "pyinstaller>=6.0.0",
+]
+
+[project.scripts]
+phoniebox-installer = "phoniebox_installer.main:main"
+
+[project.urls]
+Homepage = "https://github.com/MiczFlor/RPi-Jukebox-RFID"
+Repository = "https://github.com/MiczFlor/RPi-Jukebox-RFID"
+
+[tool.setuptools.packages.find]
+include = ["phoniebox_installer*"]
+
+[tool.pytest.ini_options]
+qt_api = "pyside6"
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.flake8]
+max-line-length = 100
+exclude = [".venv", ".git", "__pycache__", "build", "dist"]
