@@ -15,6 +15,7 @@ from phoniebox_installer.app.state import InstallerState
 from phoniebox_installer.app.controller import InstallerController
 from phoniebox_installer.gui.wizard import Wizard
 from phoniebox_installer.ssh.connection import SshConnectionManager
+from phoniebox_installer.util.theme import apply_light_theme
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +80,10 @@ class Application:
         # Create and inject the SSH connection manager (M3)
         self.ssh_manager = SshConnectionManager(self.event_bus)
         self.controller.set_ssh_manager(self.ssh_manager)
+
+        # Force a light color scheme so the UI stays readable regardless of
+        # the desktop theme (e.g. Breeze Dark leaves white text by default).
+        apply_light_theme(self._app)
 
         # Apply base stylesheet
         self._app.setStyleSheet("""
