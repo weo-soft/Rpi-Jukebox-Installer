@@ -57,7 +57,7 @@ class SystemCheckRunner:
     """Runs the pre-flight checks over SSH and publishes typed results.
 
     Publishes CheckEvents.CHECK_COMPLETED with the typed values for each key plus
-    a 'status' map {key: pass|warn|fail} (matching what SystemCheckPage expects).
+    a 'status' map {key: pass|warn|fail} (matching what the SSH page expects).
     """
 
     def __init__(self, ssh_manager, event_bus):
