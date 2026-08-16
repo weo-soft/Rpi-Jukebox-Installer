@@ -206,7 +206,6 @@ class InstallerController:
         self.state.has_internet = payload.get('has_internet', False)
         self.state.has_git = payload.get('has_git', False)
         self.state.has_python = payload.get('has_python', False)
-        self.state.has_pip = payload.get('has_pip', False)
         self.state.existing_installation = payload.get('existing_installation', False)
         self.state.existing_version = payload.get('existing_version', '')
         self.state.existing_install_action = payload.get('existing_install_action', '')

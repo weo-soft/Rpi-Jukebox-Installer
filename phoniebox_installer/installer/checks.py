@@ -15,10 +15,8 @@ CHECKS = [
     ("disk_total_mb", "Total disk (MB)", "df -m / | tail -1 | awk '{print $2}'", "info"),
     ("memory_mb", "RAM (MB)", "free -m | grep Mem | awk '{print $2}'", "info"),
     ("has_internet", "Internet", "ping -c 1 -W 2 8.8.8.8 >/dev/null 2>&1 && echo yes || echo no", "critical"),
-    ("has_git", "Git", "which git >/dev/null 2>&1 && echo yes || echo no", "critical"),
+    ("has_git", "Git", "which git >/dev/null 2>&1 && echo yes || echo no", "warn"),
     ("has_python", "Python 3", "python3 --version 2>&1", "critical"),
-    ("has_pip", "pip3", "which pip3 >/dev/null 2>&1 && echo yes || echo no", "warn"),
-    ("has_docker", "Docker", "which docker >/dev/null 2>&1 && echo yes || echo no", "warn"),
     ("existing_installation", "Existing installation", "test -d ~/RPi-Jukebox-RFID && echo yes || echo no", "warn"),
     ("existing_version", "Installed version", "python ~/RPi-Jukebox-RFID/src/jukebox/jukebox/version.py 2>/dev/null", "info"),
 ]
@@ -35,10 +33,10 @@ def evaluate(key: str, value: str) -> str:
         except (ValueError, TypeError):
             free = 0
         return "pass" if free >= 500 else "warn"  # warn-only: Musik kann auf USB liegen
-    if key in ("has_internet", "has_git"):
+    if key == "has_internet":
         return "pass" if value.strip() == "yes" else "fail"
-    if key in ("has_pip", "has_docker"):
-        # Optional tools → warn (not fail) when missing.
+    if key == "has_git":
+        # Git is installed by the install script (prepare_dependencies) — warn only.
         return "pass" if value.strip() == "yes" else "warn"
     if key == "has_python":
         m = re.search(r"Python (\d+)\.(\d+)", value)
@@ -94,8 +92,6 @@ class SystemCheckRunner:
             "has_internet": raw.get("has_internet", "").strip() == "yes",
             "has_git": raw.get("has_git", "").strip() == "yes",
             "has_python": status.get("has_python") == "pass",
-            "has_pip": status.get("has_pip") == "pass",
-            "has_docker": raw.get("has_docker", "").strip() == "yes",
             "existing_installation": raw.get("existing_installation", "").strip() == "yes",
             "existing_version": raw.get("existing_version", ""),
             "status": status,
