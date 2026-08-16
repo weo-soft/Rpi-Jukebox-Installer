@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Phoniebox Installer
+Comment=Graphical installer for RPi-Jukebox-RFID
+Exec=phoniebox-installer
+Type=Application
+Categories=Utility;System;
+Icon=phoniebox-installer
+Terminal=false
