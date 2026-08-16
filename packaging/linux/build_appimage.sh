@@ -3,6 +3,21 @@
 
 set -e
 
+# Activate the project venv if present and not already active, so that
+# `python` and `pyinstaller` resolve to the local environment.
+if [[ -z "${VIRTUAL_ENV:-}" && -x ".venv/bin/activate" ]]; then
+    echo "Activating .venv..."
+    # shellcheck disable=SC1091
+    source ".venv/bin/activate"
+fi
+
+if ! command -v pyinstaller &>/dev/null; then
+    echo "ERROR: pyinstaller not found."
+    echo "Install the dev dependencies first:"
+    echo "  uv pip install --python .venv/bin/python -r requirements-dev.txt"
+    exit 1
+fi
+
 APP="phoniebox-installer"
 VERSION=$(python -c "import phoniebox_installer; print(phoniebox_installer.__version__)")
 
