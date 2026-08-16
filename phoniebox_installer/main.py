@@ -8,12 +8,12 @@ import sys
 import logging
 from pathlib import Path
 
-from PySide6.QtWidgets import QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget
-from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QApplication, QMainWindow
 
 from phoniebox_installer.app.event_bus import EventBus
 from phoniebox_installer.app.state import InstallerState
 from phoniebox_installer.app.controller import InstallerController
+from phoniebox_installer.gui.wizard import Wizard
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +92,7 @@ class Application:
 
 
 class MainWindow(QMainWindow):
-    """Main application window (placeholder — will contain the Wizard in M2)."""
+    """Main application window hosting the installation Wizard."""
 
     def __init__(self, controller: InstallerController):
         super().__init__()
@@ -109,18 +109,39 @@ class MainWindow(QMainWindow):
             (screen.height() - self.height()) // 2,
         )
 
-        central = QWidget()
-        self.setCentralWidget(central)
-        layout = QVBoxLayout(central)
+        # Wizard Page Registry (in order)
+        from phoniebox_installer.gui.pages.welcome import WelcomePage
+        from phoniebox_installer.gui.pages.discover import DiscoverPage
+        from phoniebox_installer.gui.pages.ssh import SshCredentialsPage
+        from phoniebox_installer.gui.pages.system_check import SystemCheckPage
+        from phoniebox_installer.gui.pages.options import OptionsPage
+        from phoniebox_installer.gui.pages.summary import SummaryPage
+        from phoniebox_installer.gui.pages.install import InstallPage
+        from phoniebox_installer.gui.pages.finish import FinishPage
 
-        label = QLabel(
-            f"Phoniebox Installer v{__import__('phoniebox_installer').__version__}\n\n"
-            "EventBus + Controller initialized.\n"
-            "Wizard framework coming in M2..."
+        page_classes = [
+            WelcomePage,
+            DiscoverPage,
+            SshCredentialsPage,
+            SystemCheckPage,
+            OptionsPage,
+            SummaryPage,
+            InstallPage,
+            FinishPage,
+        ]
+
+        self.wizard = Wizard(
+            page_classes,
+            controller.get_state(),
+            get_event_bus(),
+            controller,
         )
-        label.setAlignment(Qt.AlignCenter)
-        label.setStyleSheet("font-size: 16px; padding: 40px;")
-        layout.addWidget(label)
+        self.setCentralWidget(self.wizard)
+        self.wizard.set_page(0)  # Start at welcome page
+
+        # Connect wizard signals
+        self.wizard.finished.connect(self.close)
+        self.wizard.cancelled.connect(self.close)
 
 
 def main():
