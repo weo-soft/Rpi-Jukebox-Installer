@@ -1,0 +1,15 @@
+"""Install page — live log and progress."""
+
+from PySide6.QtWidgets import QLabel, QVBoxLayout
+from phoniebox_installer.gui.pages.base import BasePage
+
+
+class InstallPage(BasePage):
+    page_id = "install"
+    title = "Installing Phoniebox"
+    subtitle = "Live installation log and progress."
+
+    def __init__(self, state, event_bus, controller=None, parent=None):
+        super().__init__(state, event_bus, controller=controller, parent=parent)
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("(Implementation in Milestone 13)"))
