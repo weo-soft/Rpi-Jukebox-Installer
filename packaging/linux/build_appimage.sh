@@ -32,7 +32,11 @@ APPDIR="AppDir"
 mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/applications" "$APPDIR/usr/share/icons"
 
 cp "dist/$APP" "$APPDIR/usr/bin/"
+# appimagetool looks for the .desktop file at the AppDir root.
+cp "packaging/linux/$APP.desktop" "$APPDIR/"
 cp "packaging/linux/$APP.desktop" "$APPDIR/usr/share/applications/"
+# Icon referenced by the desktop file's Icon= field.
+cp "phoniebox_installer/resources/icons/phoniebox_logo.png" "$APPDIR/$APP.png"
 cp packaging/linux/AppRun "$APPDIR/"
 chmod +x "$APPDIR/AppRun" "$APPDIR/usr/bin/$APP"
 
