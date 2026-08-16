@@ -80,3 +80,33 @@ def test_rfid_module_required_when_enabled(qapp):
     page._rfid_checkbox.setChecked(False)
     valid, _ = page.validate()
     assert valid is True
+
+
+def test_branch_url_fills_fork_and_branch(qapp):
+    """A pasted branch URL auto-fills the fork and branch fields."""
+    page = _make_page()
+    page._git_url_input.setText(
+        "https://github.com/weo-soft/RPi-Jukebox-RFID/"
+        "tree/future3/feature/installer-noninteractive-config"
+    )
+    page._on_url_changed()
+    assert page._git_fork_input.text() == "weo-soft"
+    assert page._git_branch_input.text() == "future3/feature/installer-noninteractive-config"
+
+
+def test_validate_rejects_invalid_url(qapp):
+    """An unparseable branch URL blocks 'Next'."""
+    page = _make_page()
+    page._git_url_input.setText("not-a-url")
+    valid, msg = page.validate()
+    assert valid is False
+    assert "Could not parse" in msg
+
+
+def test_validate_rejects_wrong_repo(qapp):
+    """A URL for a different repository blocks 'Next'."""
+    page = _make_page()
+    page._git_url_input.setText("https://github.com/weo-soft/SomeOtherRepo/tree/main")
+    valid, msg = page.validate()
+    assert valid is False
+    assert "RPi-Jukebox-RFID" in msg
