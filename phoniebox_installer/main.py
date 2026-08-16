@@ -14,6 +14,7 @@ from phoniebox_installer.app.event_bus import EventBus
 from phoniebox_installer.app.state import InstallerState
 from phoniebox_installer.app.controller import InstallerController
 from phoniebox_installer.gui.wizard import Wizard
+from phoniebox_installer.ssh.connection import SshConnectionManager
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +75,10 @@ class Application:
         # Initialize singletons
         self.event_bus = get_event_bus()
         self.controller = get_controller()
+
+        # Create and inject the SSH connection manager (M3)
+        self.ssh_manager = SshConnectionManager(self.event_bus)
+        self.controller.set_ssh_manager(self.ssh_manager)
 
         # Apply base stylesheet
         self._app.setStyleSheet("""
