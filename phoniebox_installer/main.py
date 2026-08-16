@@ -16,7 +16,7 @@ from phoniebox_installer.gui.wizard import Wizard
 from phoniebox_installer.ssh.connection import SshConnectionManager
 from phoniebox_installer.ssh.sftp import SftpWrapper
 from phoniebox_installer.installer.install import InstallManager
-from phoniebox_installer.util.theme import apply_light_theme
+from phoniebox_installer.util.theme import apply_light_theme, get_app_stylesheet
 
 logger = logging.getLogger(__name__)
 
@@ -95,13 +95,8 @@ class Application:
         # Force a light color scheme so the UI stays readable regardless of
         # the desktop theme (e.g. Breeze Dark leaves white text by default).
         apply_light_theme(self._app)
-
-        # Apply base stylesheet
-        self._app.setStyleSheet("""
-            QMainWindow {
-                background-color: #f5f5f5;
-            }
-        """)
+        # Global control stylesheet (button/checkbox/input contours).
+        self._app.setStyleSheet(get_app_stylesheet())
 
         # Create main window (placeholder — replaced by wizard in M2)
         self._window = MainWindow(self.controller)
@@ -134,21 +129,17 @@ class MainWindow(QMainWindow):
         from phoniebox_installer.gui.pages.welcome import WelcomePage
         from phoniebox_installer.gui.pages.discover import DiscoverPage
         from phoniebox_installer.gui.pages.ssh import SshCredentialsPage
-        from phoniebox_installer.gui.pages.system_check import SystemCheckPage
         from phoniebox_installer.gui.pages.options import OptionsPage
         from phoniebox_installer.gui.pages.summary import SummaryPage
         from phoniebox_installer.gui.pages.install import InstallPage
-        from phoniebox_installer.gui.pages.finish import FinishPage
 
         page_classes = [
             WelcomePage,
             DiscoverPage,
             SshCredentialsPage,
-            SystemCheckPage,
             OptionsPage,
             SummaryPage,
             InstallPage,
-            FinishPage,
         ]
 
         self.wizard = Wizard(

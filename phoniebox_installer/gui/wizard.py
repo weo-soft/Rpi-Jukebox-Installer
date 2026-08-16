@@ -99,8 +99,9 @@ class Wizard(QWidget):
 
         # ---- Navigation Bar ----
         nav_widget = QWidget()
+        nav_widget.setObjectName("navBar")
         nav_widget.setStyleSheet("""
-            QWidget {
+            #navBar {
                 background-color: #f0f0f0;
                 border-top: 1px solid #ddd;
             }
