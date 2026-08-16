@@ -62,4 +62,6 @@ jobs:
 
       - name: PyInstaller build check
         run: |
-          pyinstaller --onefile --name phoniebox-installer phoniebox_installer/main.py
+          pyinstaller --onefile --name phoniebox-installer \
+            --add-data "phoniebox_installer/resources:phoniebox_installer/resources" \
+            phoniebox_installer/main.py
