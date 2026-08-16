@@ -6,7 +6,6 @@ avoiding the "QApplication already exists" error.
 """
 
 import sys
-import os
 import pytest
 
 from PySide6.QtWidgets import QApplication
