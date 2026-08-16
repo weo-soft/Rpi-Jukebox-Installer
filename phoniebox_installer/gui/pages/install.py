@@ -32,6 +32,7 @@ class InstallPage(BasePage):
         self._detail_lines = []
         self._show_details = False
         self._install_triggered = False
+        self._install_failed = False
 
         self._countdown_remaining = REBOOT_COUNTDOWN_SECONDS
         self._reboot_sent = False
@@ -117,11 +118,17 @@ class InstallPage(BasePage):
         self.event_bus.subscribe(InstallEvents.INSTALL_COMPLETED, self._on_completed)
         self.event_bus.subscribe(InstallEvents.INSTALL_FAILED, self._on_failed)
         self.event_bus.subscribe(InstallEvents.INSTALL_DETAIL, self._on_detail)
-        # Start the installation once. Re-entering the page (e.g. via Back/Next)
-        # must not restart it — otherwise a completed install would be re-run
-        # against a rebooting Pi and fail.
-        if self.controller is not None and not self._install_triggered:
+        # Start the installation. Re-entering the page must not restart a
+        # completed or still-running install (a completed install would
+        # otherwise be re-run against a rebooting Pi), but a FAILED attempt
+        # (e.g. the install script does not support --config) SHOULD be
+        # restarted: the user can go back, change e.g. fork/branch, and come
+        # back here to try again with the updated state.
+        if self.controller is not None and (
+            not self._install_triggered or self._install_failed
+        ):
             self._install_triggered = True
+            self._install_failed = False
             self.controller.start_install()
 
     def _on_install_started(self, payload):
@@ -181,6 +188,9 @@ class InstallPage(BasePage):
         self._start_countdown()
 
     def _on_failed(self, payload):
+        # Remember the failure so re-entering the page restarts the install
+        # (e.g. after the user changed the fork/branch to retry).
+        self._install_failed = True
         self._phase_label.setText(f"❌ {payload.get('error', 'Installation failed')}")
         self._phase_label.setStyleSheet(
             "font-size: 16px; font-weight: bold; color: #d33;"

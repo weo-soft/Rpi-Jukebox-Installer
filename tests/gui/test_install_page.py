@@ -280,3 +280,46 @@ def test_check_reachable_false_for_closed_port(qapp, monkeypatch):
         lambda family, type: _FakeSocket(set()),
     )
     assert page._check_reachable() is False
+
+
+def test_on_enter_starts_install_once(qapp):
+    """Re-entering without a failure must not restart the install."""
+    controller = _FakeController()
+    page = _make_page(controller=controller)
+
+    page.on_enter()
+    page.on_leave()
+    page.on_enter()
+
+    assert controller.install_starts == 1
+
+
+def test_on_enter_restarts_after_failure(qapp):
+    """A failed install is restarted when the page is entered again.
+
+    This is the retry path: the user goes back, changes e.g. the fork/branch,
+    and returns — the install must run again with the updated state instead of
+    staying stuck in the failed state.
+    """
+    controller = _FakeController()
+    page = _make_page(controller=controller)
+
+    page.on_enter()
+    page._on_failed({"error": "install-jukebox.sh does not support --config"})
+    page.on_leave()
+    page.on_enter()
+
+    assert controller.install_starts == 2
+
+
+def test_on_enter_does_not_restart_after_success(qapp):
+    """A completed install must not be re-run when the page is re-entered."""
+    controller = _FakeController()
+    page = _make_page(controller=controller)
+
+    page.on_enter()
+    page._on_completed({})
+    page.on_leave()
+    page.on_enter()
+
+    assert controller.install_starts == 1
