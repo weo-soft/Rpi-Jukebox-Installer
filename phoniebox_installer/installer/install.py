@@ -57,6 +57,11 @@ class InstallManager:
         self._cancelled: bool = False
         self._mode: InstallMode = InstallMode.CONFIG
 
+        # Detail log streaming (tail of the remote INSTALL-*.log file)
+        self._detail_log_path: Optional[str] = None
+        self._detail_thread: Optional[threading.Thread] = None
+        self._detail_stop = threading.Event()
+
         # Subscribe to cancel
         self._event_bus.subscribe(AppEvents.CANCEL, self._on_cancel)
 
@@ -143,6 +148,8 @@ class InstallManager:
             self._event_bus.publish(InstallEvents.INSTALL_FAILED, {
                 "error": str(e),
             })
+        finally:
+            self._stop_detail_tail()
 
     def _install_config_mode(self, state):
         """
@@ -182,7 +189,7 @@ class InstallManager:
                 f"RPi-Jukebox-RFID/{state.git_branch}/installation/install-jukebox.sh && "
                 f"bash /tmp/install-jukebox.sh --config /tmp/install_config.env"
             )
-            exit_status = self._ssh.exec_command(cmd)  # raises bei Transportfehler/Timeout
+            exit_status = self._ssh.exec_command(cmd, on_line=self._on_install_line)
             if exit_status != 0:
                 raise RuntimeError(
                     f"install-jukebox.sh exited with status {exit_status}"
@@ -190,6 +197,54 @@ class InstallManager:
 
         finally:
             os.unlink(local_path)
+
+    # ------------------------------------------------------------------
+    # Detail log streaming
+    # ------------------------------------------------------------------
+
+    def _on_install_line(self, line: str):
+        """Handle a console line from the install script.
+
+        Publishes it as INSTALL_OUTPUT and detects the remote log file path,
+        starting a tail of that file for the detailed live log.
+        """
+        self._event_bus.publish(InstallEvents.INSTALL_OUTPUT, {"line": line})
+        if line.startswith("INSTALLATION_LOGFILE="):
+            path = line.split("=", 1)[1].strip()
+            if path and path != self._detail_log_path:
+                self._detail_log_path = path
+                self._start_detail_tail()
+
+    def _start_detail_tail(self):
+        """Tail the remote install log file (detailed view)."""
+        if self._detail_log_path is None or self._ssh is None:
+            return
+        self._detail_stop.clear()
+
+        def _run():
+            def _line(line):
+                self._event_bus.publish(InstallEvents.INSTALL_DETAIL, {"line": line})
+
+            try:
+                self._ssh.stream_command(
+                    f"tail -n +1 -f '{self._detail_log_path}'",
+                    on_line=_line,
+                    stop_event=self._detail_stop,
+                )
+            except Exception as e:
+                logger.debug(f"Detail log tail stopped: {e}")
+
+        self._detail_thread = threading.Thread(
+            target=_run, daemon=True, name="install-detail-tail"
+        )
+        self._detail_thread.start()
+
+    def _stop_detail_tail(self):
+        """Stop the detail log tail thread."""
+        self._detail_stop.set()
+        if self._detail_thread is not None and self._detail_thread.is_alive():
+            self._detail_thread.join(timeout=2.0)
+        self._detail_thread = None
 
     # ------------------------------------------------------------------
     # Helpers
