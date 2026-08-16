@@ -23,6 +23,12 @@ Thumbs.db
 
 # PyInstaller
 *.spec.bak
+/phoniebox-installer.spec
+
+# AppImage build artifacts
+*.AppImage
+AppDir/
+appimagetool
 
 # Coverage
 htmlcov/
