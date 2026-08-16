@@ -7,12 +7,24 @@ on:
 
 jobs:
   build:
-    name: Build & Release
+    name: Build ${{ matrix.artifact }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, windows-2022]
+        include:
+          - os: windows-2022
+            artifact: phoniebox-installer.exe
+            build_cmd: pyinstaller packaging/windows/phoniebox-installer.spec
+            files: dist/Phoniebox-Installer.exe
+          - os: ubuntu-24.04
+            artifact: phoniebox-installer.AppImage
+            build_cmd: bash packaging/linux/build_appimage.sh
+            files: Phoniebox-Installer-*.AppImage
+
     runs-on: ${{ matrix.os }}
+
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -23,15 +35,22 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: |
-          pip install -r requirements-dev.txt
+        run: pip install -r requirements-dev.txt
 
-      - name: Build with PyInstaller
-        run: |
-          pyinstaller --onefile --windowed --name phoniebox-installer phoniebox_installer/main.py
+      - name: Build
+        env:
+          # Run appimagetool without FUSE (Ubuntu 24.04 CI).
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+        run: ${{ matrix.build_cmd }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: phoniebox-installer-${{ matrix.os }}
-          path: dist/
+          path: ${{ matrix.files }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.files }}
+
