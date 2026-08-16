@@ -1,5 +1,6 @@
 """Network utilities: mDNS discovery and port scanning."""
 
+import concurrent.futures
 import logging
 import socket
 import threading
@@ -79,11 +80,18 @@ class MdnsDiscovery:
 
 
 class PortScanner:
-    """Scans local subnet for hosts with SSH port 22 open."""
+    """Scans local subnet for hosts with SSH port 22 open.
 
-    def __init__(self, event_bus, timeout: float = 0.5):
+    Probing is parallelized with a thread pool: a sequential sweep of a /24
+    would spend up to ``timeout`` seconds on each unreachable host, so a Pi at
+    ``x.x.x.60`` could take tens of seconds to surface. With ``workers``
+    parallel probes, all 254 hosts are covered in a handful of waves.
+    """
+
+    def __init__(self, event_bus, timeout: float = 0.3, workers: int = 64):
         self._event_bus = event_bus
         self._timeout = timeout
+        self._workers = workers
 
     def scan_subnet(self, subnet: str = None):
         """Start subnet scan in background thread."""
@@ -105,30 +113,50 @@ class PortScanner:
             return '192.168.1'
 
     def _scan_subnet_sync(self, subnet: str):
-        """Synchronous port scan of /24 subnet."""
+        """Probe all /24 hosts in parallel, then signal completion."""
         logger.info(f"Scanning {subnet}.0/24 for SSH...")
-        for i in range(1, 255):
-            ip = f"{subnet}.{i}"
-            try:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=self._workers) as pool:
+            futures = [
+                pool.submit(self._probe_host, subnet, i)
+                for i in range(1, 255)
+            ]
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    future.result()
+                except Exception:
+                    pass
+
+        self._event_bus.publish(DiscoveryEvents.SCAN_COMPLETED, {"method": "scan"})
+
+    def _probe_host(self, subnet: str, i: int):
+        """Probe a single host and publish a DeviceInfo if SSH is open."""
+        ip = f"{subnet}.{i}"
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
                 sock.settimeout(self._timeout)
-                result = sock.connect_ex((ip, 22))
-                sock.close()
-                if result == 0:
-                    try:
-                        hostname = socket.gethostbyaddr(ip)[0]
-                    except Exception:
-                        hostname = ip
-                    device = DeviceInfo(
-                        ip_address=ip,
-                        hostname=hostname,
-                        discovery_method="scan",
-                    )
-                    self._event_bus.publish(
-                        DiscoveryEvents.DEVICE_FOUND,
-                        {"device": device}
-                    )
+                if sock.connect_ex((ip, 22)) != 0:
+                    return
+        except Exception:
+            return
+
+        device = DeviceInfo(
+            ip_address=ip,
+            hostname=self._reverse_dns(ip),
+            discovery_method="scan",
+        )
+        self._event_bus.publish(DiscoveryEvents.DEVICE_FOUND, {"device": device})
+
+    def _reverse_dns(self, ip: str, timeout: float = 0.5) -> str:
+        """Best-effort reverse DNS lookup, bounded so it can't stall the scan."""
+        result = [ip]
+
+        def _lookup():
+            try:
+                result[0] = socket.gethostbyaddr(ip)[0]
             except Exception:
                 pass
 
-        self._event_bus.publish(DiscoveryEvents.SCAN_COMPLETED, {"method": "scan"})
+        thread = threading.Thread(target=_lookup, daemon=True)
+        thread.start()
+        thread.join(timeout)
+        return result[0]
