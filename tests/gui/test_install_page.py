@@ -64,3 +64,24 @@ def test_next_enabled_after_completion(qapp):
     page.state.install_success = True
     valid, _ = page.validate()
     assert valid is True
+
+
+def test_details_toggle_switches_log_source(qapp):
+    """The Details checkbox switches between step and detail log views."""
+    page = _make_page()
+    page._on_output({"line": "step-line"})
+    page._on_detail({"line": "detail-line"})
+
+    # Default: show the high-level steps.
+    assert "step-line" in page._log.toPlainText()
+    assert "detail-line" not in page._log.toPlainText()
+
+    # Toggle to details: show the detailed (tailed) log.
+    page._details_checkbox.setChecked(True)
+    assert "detail-line" in page._log.toPlainText()
+    assert "step-line" not in page._log.toPlainText()
+
+    # Toggle back.
+    page._details_checkbox.setChecked(False)
+    assert "step-line" in page._log.toPlainText()
+    assert "detail-line" not in page._log.toPlainText()

@@ -15,6 +15,7 @@ class _FakeSsh:
         self._exit_status = exit_status
         self._lines = list(lines or [])
         self.commands = []
+        self.stream_calls = []
         self.cancel_called = False
 
     def exec_command(self, cmd, timeout=3600.0, on_line=None):
@@ -23,6 +24,9 @@ class _FakeSsh:
             for line in self._lines:
                 on_line(line)
         return self._exit_status
+
+    def stream_command(self, command, on_line=None, stop_event=None):
+        self.stream_calls.append(command)
 
     def cancel_current(self):
         self.cancel_called = True
@@ -111,3 +115,29 @@ def test_config_support_check_raises_without_flag(qapp):
 
     with pytest.raises(RuntimeError):
         mgr._config_support_check(InstallerState())
+
+
+def test_install_line_publishes_output_and_detects_logfile(qapp):
+    """Console lines → INSTALL_OUTPUT; the logfile line starts the detail tail."""
+    bus = EventBus()
+    ssh = _FakeSsh()
+    mgr = InstallManager(bus, ssh_connection=ssh)
+
+    received = []
+    bus.subscribe(InstallEvents.INSTALL_OUTPUT, received.append)
+
+    mgr._on_install_line("hello")
+    assert received == [{"line": "hello"}]
+
+    mgr._on_install_line("INSTALLATION_LOGFILE=/home/pi/INSTALL-123.log")
+    assert mgr._detail_log_path == "/home/pi/INSTALL-123.log"
+
+    # The detail tail thread starts and tails the remote log file.
+    import time as _time
+    for _ in range(100):
+        if ssh.stream_calls:
+            break
+        _time.sleep(0.02)
+    assert ssh.stream_calls == ["tail -n +1 -f '/home/pi/INSTALL-123.log'"]
+
+    mgr._stop_detail_tail()

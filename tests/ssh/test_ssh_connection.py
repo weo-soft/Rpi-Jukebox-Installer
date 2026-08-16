@@ -1,5 +1,6 @@
 """Tests for the SSH connection manager (Paramiko mocked)."""
 
+import threading
 import time
 
 import paramiko
@@ -234,3 +235,23 @@ class TestSshConnection:
 
         assert b"\x03" in channel._sent
         assert any("pkill -f install-jukebox.sh" in c for c in client.exec_calls)
+
+    def test_stream_command_streams_lines_until_stopped(self, qapp, tmp_path, monkeypatch):
+        """stream_command streams lines until the stop event is set."""
+        channel = _FakeChannel(lines=["hello", "world"])
+        client = _FakeClient(transport=_FakeTransport(channel))
+        bus, mgr, _ = self._make_manager(tmp_path, monkeypatch, client)
+        mgr._client = client
+        mgr._connected = True
+
+        stop = threading.Event()
+        collected = []
+
+        def _stop_later():
+            time.sleep(0.3)
+            stop.set()
+
+        threading.Thread(target=_stop_later, daemon=True).start()
+        mgr.stream_command("tail -f /x", on_line=collected.append, stop_event=stop)
+
+        assert collected == ["hello", "world"]
