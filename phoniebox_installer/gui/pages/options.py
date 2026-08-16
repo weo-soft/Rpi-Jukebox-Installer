@@ -1,12 +1,17 @@
 """Installation options page."""
 
+import threading
+
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
-    QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit,
-    QCheckBox, QComboBox, QGroupBox, QScrollArea, QWidget,
+    QLabel, QVBoxLayout, QHBoxLayout, QLineEdit,
+    QCheckBox, QComboBox, QGroupBox, QScrollArea, QWidget, QCompleter,
 )
 
 from phoniebox_installer.gui.pages.base import BasePage
+from phoniebox_installer.gui.widgets import CollapsibleGroupBox
 from phoniebox_installer.util.validation import parse_github_branch_url
+from phoniebox_installer.util.network import fetch_github_branches
 
 RFID_READERS = [
     "pn532_i2c_py532",
@@ -32,8 +37,21 @@ class OptionsPage(BasePage):
     title = "Configure Your Installation"
     subtitle = "Customize how Phoniebox is installed."
 
+    #: Branch names fetched from GitHub (emitted from a worker thread).
+    _branches_loaded = Signal(list)
+
     def __init__(self, state, event_bus, controller=None, parent=None):
         super().__init__(state, event_bus, controller=controller, parent=parent)
+        self._branch_cache = {}          # owner -> [branch names]
+        self._branch_fetch_pending = set()
+        self._branches_loaded.connect(self._on_branches_loaded)
+
+        # Debounce branch-list reloads while the user edits the fork field.
+        self._branch_debounce = QTimer(self)
+        self._branch_debounce.setSingleShot(True)
+        self._branch_debounce.setInterval(400)
+        self._branch_debounce.timeout.connect(self._load_branches)
+
         self._setup_ui()
 
     def _setup_ui(self):
@@ -49,9 +67,9 @@ class OptionsPage(BasePage):
         layout = QVBoxLayout(content)
         layout.setSpacing(12)
 
-        # ---- Phoniebox Source ----
-        source_group = QGroupBox("Phoniebox Source")
-        source_layout = QVBoxLayout(source_group)
+        # ---- Phoniebox Source (developer-focused, collapsed by default) ----
+        source_group = CollapsibleGroupBox("Phoniebox Source", collapsed=True)
+        source_layout = source_group.content_layout()
         source_layout.addWidget(QLabel("Branch URL (paste to auto-fill fork + branch):"))
         self._git_url_input = QLineEdit()
         self._git_url_input.setPlaceholderText(
@@ -64,15 +82,50 @@ class OptionsPage(BasePage):
         self._url_hint_label.setStyleSheet("color: #b04a00;")
         self._url_hint_label.setVisible(False)
         source_layout.addWidget(self._url_hint_label)
-        source_layout.addWidget(QLabel("Git Project/Fork:"))
-        self._git_fork_input = QLineEdit("MiczFlor")
-        source_layout.addWidget(self._git_fork_input)
-        source_layout.addWidget(QLabel("Git Branch:"))
-        self._git_branch_input = QLineEdit("future3/main")
-        source_layout.addWidget(self._git_branch_input)
-        layout.addWidget(source_group)
+        # Git Project/Fork and Git Branch side by side.
+        fork_branch_row = QHBoxLayout()
+        fork_branch_row.setSpacing(12)
 
-        # ---- System Options ----
+        fork_col = QVBoxLayout()
+        fork_col.addWidget(QLabel("Git Project/Fork:"))
+        self._git_fork_input = QLineEdit("MiczFlor")
+        fork_col.addWidget(self._git_fork_input)
+        fork_branch_row.addLayout(fork_col, stretch=1)
+
+        branch_col = QVBoxLayout()
+        branch_col.addWidget(QLabel("Git Branch:"))
+        self._git_branch_combo = QComboBox()
+        self._git_branch_combo.setEditable(True)
+        self._git_branch_combo.setInsertPolicy(QComboBox.NoInsert)
+        self._git_branch_combo.setCurrentText("future3/main")
+        branch_col.addWidget(self._git_branch_combo)
+        fork_branch_row.addLayout(branch_col, stretch=1)
+
+        source_layout.addLayout(fork_branch_row)
+
+        # Branch autocomplete from the GitHub branches API (see _load_branches).
+        # An editable combo gives a proper dropdown that closes on outside
+        # click and autocompletes while typing — a QLineEdit+QCompleter popup
+        # shown on focus can grab the mouse and block input globally.
+        self._branch_completer = QCompleter(self._git_branch_combo.model(), self)
+        self._branch_completer.setCaseSensitivity(Qt.CaseInsensitive)
+        self._branch_completer.setFilterMode(Qt.MatchContains)
+        self._branch_completer.setCompletionMode(QCompleter.PopupCompletion)
+        self._git_branch_combo.setCompleter(self._branch_completer)
+        # The bundle mode is tied to the source: only the upstream release
+        # branch ships release-only bundles, forks/development branches need
+        # the commit-addressed development bundles (see _sync_webapp_bundle_to_source).
+        source_layout.addWidget(QLabel("WebApp bundle:"))
+        self._webapp_bundle_combo = QComboBox()
+        for mode in WEBAPP_BUNDLE_MODES:
+            self._webapp_bundle_combo.addItem(mode, mode)
+        source_layout.addWidget(self._webapp_bundle_combo)
+
+        # ---- System Options (left) | Services + Audio (right) ----
+        columns = QHBoxLayout()
+        columns.setSpacing(12)
+
+        # Left column: System Options.
         sys_group = QGroupBox("System Options")
         sys_layout = QVBoxLayout(sys_group)
         self._static_ip_checkbox = self._add_checkbox(sys_layout, "Static IP", True)
@@ -85,9 +138,18 @@ class OptionsPage(BasePage):
         self._mpd_checkbox = self._add_checkbox(sys_layout, "Setup MPD", True)
         self._mpd_overwrite_checkbox = self._add_checkbox(sys_layout, "Overwrite MPD config", True)
         self._update_os_checkbox = self._add_checkbox(sys_layout, "Update OS", False)
-        layout.addWidget(sys_group)
+        columns.addWidget(sys_group, stretch=1)
 
-        # ---- Services ----
+        # Right column: Services on top, Audio below it. Both blocks are
+        # bottom-anchored so the two columns have the same height and end
+        # flush at the bottom.
+        right_col = QVBoxLayout()
+        right_col.setSpacing(12)
+
+        # Anchor the right block to the bottom so both columns end flush
+        # even when a container is collapsed.
+        right_col.addStretch()
+
         services_group = QGroupBox("Services")
         services_layout = QVBoxLayout(services_group)
 
@@ -107,9 +169,8 @@ class OptionsPage(BasePage):
         self._kiosk_checkbox = self._add_checkbox(
             services_layout, "Kiosk Mode (full-screen WebUI)", False
         )
-        layout.addWidget(services_group)
+        right_col.addWidget(services_group)
 
-        # ---- Audio ----
         audio_group = QGroupBox("Audio")
         audio_layout = QVBoxLayout(audio_group)
         audio_layout.addWidget(QLabel("HiFiBerry Board:"))
@@ -119,19 +180,15 @@ class OptionsPage(BasePage):
             self._hifiberry_combo.addItem(board, board)
         audio_layout.addWidget(self._hifiberry_combo)
         audio_layout.addWidget(QLabel("ℹ️  Select the audio HAT overlay (optional)"))
-        layout.addWidget(audio_group)
+        right_col.addWidget(audio_group)
 
-        # ---- WebApp bundle / advanced ----
-        adv_group = QGroupBox("Advanced")
-        adv_layout = QVBoxLayout(adv_group)
-        adv_layout.addWidget(QLabel("WebApp bundle:"))
-        self._webapp_bundle_combo = QComboBox()
-        for mode in WEBAPP_BUNDLE_MODES:
-            self._webapp_bundle_combo.addItem(mode, mode)
-        adv_layout.addWidget(self._webapp_bundle_combo)
-        self._advanced_btn = QPushButton("Erweitert...")
-        adv_layout.addWidget(self._advanced_btn)
-        layout.addWidget(adv_group)
+        columns.addLayout(right_col, stretch=1)
+
+        layout.addLayout(columns)
+
+        # Phoniebox Source — developer-focused, so it is placed below the main
+        # option blocks instead of being the most prominent section.
+        layout.addWidget(source_group)
 
         layout.addStretch()
 
@@ -149,6 +206,13 @@ class OptionsPage(BasePage):
         )
         self._webapp_checkbox.toggled.connect(self._on_webapp_toggled)
         self._autohotspot_checkbox.toggled.connect(self._on_autohotspot_toggled)
+        # A non-upstream source requires the development WebApp bundle.
+        self._git_fork_input.textChanged.connect(self._sync_webapp_bundle_to_source)
+        self._git_branch_combo.currentTextChanged.connect(
+            self._sync_webapp_bundle_to_source
+        )
+        # Reload the branch list (debounced) when the fork changes.
+        self._git_fork_input.textChanged.connect(self._on_fork_changed)
 
     def _on_webapp_toggled(self, checked):
         self._kiosk_checkbox.setEnabled(checked)
@@ -161,13 +225,73 @@ class OptionsPage(BasePage):
             self._static_ip_checkbox.setChecked(False)
 
     # ------------------------------------------------------------------
+    # Branch autocomplete (GitHub branches API)
+    # ------------------------------------------------------------------
+
+    def _on_fork_changed(self, *_args):
+        """Debounce branch-list reloads while the fork field is edited."""
+        self._branch_debounce.start()
+
+    def _load_branches(self):
+        """(Re)load the branch list for the current fork.
+
+        Uses a per-fork cache; only uncached forks trigger a GitHub API call
+        (in a background thread so the UI stays responsive).
+        """
+        owner = self._git_fork_input.text().strip()
+        if not owner:
+            return
+        if owner in self._branch_cache:
+            self._on_branches_loaded(self._branch_cache[owner])
+            return
+        if owner in self._branch_fetch_pending:
+            return
+        self._branch_fetch_pending.add(owner)
+        threading.Thread(
+            target=self._fetch_branches_sync, args=(owner,), daemon=True
+        ).start()
+
+    def _fetch_branches_sync(self, owner):
+        """Fetch branch names in a worker thread and publish them."""
+        try:
+            names = fetch_github_branches(owner)
+        except Exception:
+            names = []
+        self._branch_cache[owner] = names
+        self._branch_fetch_pending.discard(owner)
+        self._branches_loaded.emit(names)
+
+    def _on_branches_loaded(self, names):
+        """Apply fetched branch names to the dropdown (GUI thread)."""
+        current = self._git_branch_combo.currentText()
+        self._git_branch_combo.clear()
+        self._git_branch_combo.addItems(names)
+        self._git_branch_combo.setCurrentText(current)
+
+    def _sync_webapp_bundle_to_source(self, *_args):
+        """Non-upstream sources need the development WebApp bundle.
+
+        'release-only' only makes sense for the upstream release branch
+        (MiczFlor / future3/main). Any other fork/branch requires
+        commit-addressed development bundles, so 'true' is selected
+        automatically. Switching back to the upstream release branch does not
+        force the mode back — the user can still choose it manually.
+        """
+        fork = self._git_fork_input.text().strip()
+        branch = self._git_branch_combo.currentText().strip()
+        if fork != "MiczFlor" or branch != "future3/main":
+            idx = self._webapp_bundle_combo.findData("true")
+            if idx >= 0:
+                self._webapp_bundle_combo.setCurrentIndex(idx)
+
+    # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
 
     def on_enter(self):
         """Pre-fill fields from state (restore on back-navigation)."""
         self._git_fork_input.setText(self.state.git_user)
-        self._git_branch_input.setText(self.state.git_branch)
+        self._git_branch_combo.setCurrentText(self.state.git_branch)
         self._static_ip_checkbox.setChecked(self.state.enable_static_ip)
         self._ipv6_checkbox.setChecked(self.state.disable_ipv6)
         self._autohotspot_checkbox.setChecked(self.state.enable_autohotspot)
@@ -183,6 +307,11 @@ class OptionsPage(BasePage):
         self._set_combo_data(self._rfid_reader_combo, self.state.rfid_reader_module)
         self._set_combo_data(self._hifiberry_combo, self.state.audio_hifiberry_board)
         self._set_combo_data(self._webapp_bundle_combo, self.state.enable_webapp_prod_download)
+        # The source rule wins over the stored value: a non-upstream source
+        # always requires the development WebApp bundle.
+        self._sync_webapp_bundle_to_source()
+        # Preload the branch list for the current fork (cached per fork).
+        self._load_branches()
 
     def _set_combo_data(self, combo, value):
         idx = combo.findData(value)
@@ -214,7 +343,7 @@ class OptionsPage(BasePage):
 
         self._git_fork_input.setText(owner)
         if branch:
-            self._git_branch_input.setText(branch)
+            self._git_branch_combo.setCurrentText(branch)
         self._clear_url_hint()
 
     def _show_url_hint(self, message):
@@ -228,7 +357,7 @@ class OptionsPage(BasePage):
     def validate(self):
         if not self._git_fork_input.text().strip():
             return (False, "Git fork must not be empty.")
-        if not self._git_branch_input.text().strip():
+        if not self._git_branch_combo.currentText().strip():
             return (False, "Git branch must not be empty.")
         url = self._git_url_input.text().strip()
         if url:
@@ -249,7 +378,7 @@ class OptionsPage(BasePage):
     def on_leave(self):
         """Save all field values back to state."""
         self.state.git_user = self._git_fork_input.text().strip()
-        self.state.git_branch = self._git_branch_input.text().strip()
+        self.state.git_branch = self._git_branch_combo.currentText().strip()
         self.state.enable_static_ip = self._static_ip_checkbox.isChecked()
         self.state.disable_ipv6 = self._ipv6_checkbox.isChecked()
         self.state.enable_autohotspot = self._autohotspot_checkbox.isChecked()

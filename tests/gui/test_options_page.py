@@ -1,8 +1,11 @@
 """Tests for the OptionsPage."""
 
+from PySide6.QtWidgets import QComboBox, QGroupBox
+
 from phoniebox_installer.app.event_bus import EventBus
 from phoniebox_installer.app.state import InstallerState
 from phoniebox_installer.gui.pages.options import OptionsPage
+from phoniebox_installer.gui.widgets import CollapsibleGroupBox
 
 
 def _make_page():
@@ -15,7 +18,7 @@ def test_default_values_are_set(qapp):
     """Default values match InstallerState defaults."""
     page = _make_page()
     assert page._git_fork_input.text() == "MiczFlor"
-    assert page._git_branch_input.text() == "future3/main"
+    assert page._git_branch_combo.currentText() == "future3/main"
     assert page._static_ip_checkbox.isChecked() is True
     assert page._samba_checkbox.isChecked() is False
     assert page._webapp_checkbox.isChecked() is True
@@ -29,7 +32,7 @@ def test_git_fork_branch_required(qapp):
     assert valid is False
 
     page._git_fork_input.setText("MiczFlor")
-    page._git_branch_input.setText("")
+    page._git_branch_combo.setCurrentText("")
     valid, _ = page.validate()
     assert valid is False
 
@@ -90,7 +93,7 @@ def test_branch_url_fills_fork_and_branch(qapp):
         "tree/future3/feature/installer-noninteractive-config"
     )
     assert page._git_fork_input.text() == "weo-soft"
-    assert page._git_branch_input.text() == "future3/feature/installer-noninteractive-config"
+    assert page._git_branch_combo.currentText() == "future3/feature/installer-noninteractive-config"
     assert page._url_hint_label.isHidden()
 
 
@@ -135,3 +138,162 @@ def test_validate_rejects_wrong_repo(qapp):
     valid, msg = page.validate()
     assert valid is False
     assert "RPi-Jukebox-RFID" in msg
+
+
+def test_webapp_bundle_combo_in_source_group(qapp):
+    """The WebApp bundle selection lives in the 'Phoniebox Source' group."""
+    page = _make_page()
+    source_group = next(
+        g for g in page.findChildren(QGroupBox) if g.title() == "Phoniebox Source"
+    )
+    combos = source_group.findChildren(QComboBox)
+    assert page._webapp_bundle_combo in combos
+    assert page._git_branch_combo in combos  # branch dropdown lives there too
+
+
+def test_upstream_release_keeps_release_only(qapp):
+    """The upstream release branch keeps the 'release-only' default."""
+    page = _make_page()
+    assert page._webapp_bundle_combo.currentData() == "release-only"
+
+    page._git_fork_input.setText("MiczFlor")
+    page._git_branch_combo.setCurrentText("future3/main")
+    assert page._webapp_bundle_combo.currentData() == "release-only"
+
+
+def test_non_upstream_fork_auto_selects_true(qapp):
+    """A fork automatically switches the WebApp bundle mode to 'true'."""
+    page = _make_page()
+    page._git_fork_input.setText("weo-soft")
+    page._git_branch_combo.setCurrentText("future3/feature/installer-noninteractive-config")
+    assert page._webapp_bundle_combo.currentData() == "true"
+
+
+def test_non_upstream_branch_auto_selects_true(qapp):
+    """A development branch on the upstream user also selects 'true'."""
+    page = _make_page()
+    page._git_fork_input.setText("MiczFlor")
+    page._git_branch_combo.setCurrentText("future3/develop")
+    assert page._webapp_bundle_combo.currentData() == "true"
+
+
+def test_branch_url_auto_selects_true_for_fork(qapp):
+    """Pasting a fork URL auto-fills the source and selects 'true'."""
+    page = _make_page()
+    page._git_url_input.setText(
+        "https://github.com/weo-soft/RPi-Jukebox-RFID/"
+        "tree/future3/feature/installer-noninteractive-config"
+    )
+    assert page._git_fork_input.text() == "weo-soft"
+    assert page._webapp_bundle_combo.currentData() == "true"
+
+
+def test_on_enter_non_upstream_state_selects_true(qapp):
+    """Restoring a non-upstream source from state selects 'true' too."""
+    state = InstallerState(
+        git_user="weo-soft",
+        git_branch="future3/develop",
+        enable_webapp_prod_download="release-only",
+    )
+    page = OptionsPage(state, EventBus())
+    page.on_enter()
+    assert page._webapp_bundle_combo.currentData() == "true"
+
+
+def test_on_leave_persists_auto_selected_bundle(qapp):
+    """The auto-selected 'true' mode is written to state on leave."""
+    page = _make_page()
+    page._git_fork_input.setText("weo-soft")
+    page._git_branch_combo.setCurrentText("future3/develop")
+    page.on_leave()
+    assert page.state.enable_webapp_prod_download == "true"
+
+
+def _completer_names(page):
+    model = page._branch_completer.model()
+    return [
+        model.data(model.index(i, 0))
+        for i in range(model.rowCount())
+    ]
+
+
+def test_branch_completer_populated_from_cache(qapp):
+    """A cached branch list is applied to the completer immediately."""
+    page = _make_page()
+    page._branch_cache["MiczFlor"] = ["future3/main", "future3/develop"]
+    page._load_branches()
+    assert _completer_names(page) == ["future3/main", "future3/develop"]
+
+
+def test_branch_completer_populated_after_fetch(qapp, monkeypatch):
+    """A successful GitHub fetch populates the completer (via signal)."""
+    monkeypatch.setattr(
+        "phoniebox_installer.gui.pages.options.fetch_github_branches",
+        lambda owner: ["future3/main", "future3/develop"],
+    )
+    page = _make_page()
+    page._fetch_branches_sync("MiczFlor")
+    assert page._branch_cache["MiczFlor"] == ["future3/main", "future3/develop"]
+    assert _completer_names(page) == ["future3/main", "future3/develop"]
+
+
+def test_branch_completer_empty_on_fetch_failure(qapp, monkeypatch):
+    """A failed fetch leaves the completer empty (manual entry fallback)."""
+    monkeypatch.setattr(
+        "phoniebox_installer.gui.pages.options.fetch_github_branches",
+        lambda owner: (_ for _ in ()).throw(OSError("offline")),
+    )
+    page = _make_page()
+    page._fetch_branches_sync("MiczFlor")
+    assert _completer_names(page) == []
+    assert page._branch_fetch_pending == set()
+
+
+def test_fork_change_triggers_branch_load(qapp, monkeypatch):
+    """Editing the fork field schedules a branch-list reload (debounced)."""
+    fetched = []
+    monkeypatch.setattr(
+        "phoniebox_installer.gui.pages.options.fetch_github_branches",
+        lambda owner: fetched.append(owner) or ["future3/develop"],
+    )
+    page = _make_page()
+    page._git_fork_input.setText("weo-soft")
+    assert fetched == []  # debounce: not loaded synchronously
+
+    from PySide6.QtTest import QTest
+    QTest.qWait(800)
+    assert "weo-soft" in fetched
+    assert _completer_names(page) == ["future3/develop"]
+
+
+def _groups_by_title(page):
+    return {
+        g.title(): g
+        for g in page.findChildren(CollapsibleGroupBox)
+    }
+
+
+def test_source_group_collapsed_by_default(qapp):
+    """The developer-focused Phoniebox Source group starts collapsed."""
+    page = _make_page()
+    assert _groups_by_title(page)["Phoniebox Source"].is_collapsed()
+
+
+def test_only_source_group_is_collapsible(qapp):
+    """Only the developer-focused Phoniebox Source group is collapsible."""
+    page = _make_page()
+    groups = _groups_by_title(page)
+    assert set(groups) == {"Phoniebox Source"}  # no other collapsible group
+    assert groups["Phoniebox Source"].is_collapsed()
+
+
+def test_collapsible_groups_toggle(qapp):
+    """Clicking a group title toggles its content."""
+    page = _make_page()
+    source = _groups_by_title(page)["Phoniebox Source"]
+
+    source._toggle.click()          # expand
+    assert not source.is_collapsed()
+
+    source._toggle.click()          # collapse again
+    assert source.is_collapsed()
