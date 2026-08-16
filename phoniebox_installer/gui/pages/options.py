@@ -6,6 +6,7 @@ from PySide6.QtWidgets import (
 )
 
 from phoniebox_installer.gui.pages.base import BasePage
+from phoniebox_installer.util.validation import parse_github_branch_url
 
 RFID_READERS = [
     "pn532_i2c_py532",
@@ -51,6 +52,13 @@ class OptionsPage(BasePage):
         # ---- Phoniebox Source ----
         source_group = QGroupBox("Phoniebox Source")
         source_layout = QVBoxLayout(source_group)
+        source_layout.addWidget(QLabel("Branch URL (paste to auto-fill fork + branch):"))
+        self._git_url_input = QLineEdit()
+        self._git_url_input.setPlaceholderText(
+            "https://github.com/<owner>/RPi-Jukebox-RFID/tree/<branch>"
+        )
+        self._git_url_input.editingFinished.connect(self._on_url_changed)
+        source_layout.addWidget(self._git_url_input)
         source_layout.addWidget(QLabel("Git Project/Fork:"))
         self._git_fork_input = QLineEdit("MiczFlor")
         source_layout.addWidget(self._git_fork_input)
@@ -176,11 +184,35 @@ class OptionsPage(BasePage):
         if idx >= 0:
             combo.setCurrentIndex(idx)
 
+    def _on_url_changed(self):
+        """Fill fork + branch fields from a pasted GitHub branch URL."""
+        url = self._git_url_input.text().strip()
+        if not url:
+            return
+        parsed = parse_github_branch_url(url)
+        if parsed is None:
+            return
+        owner, _, branch = parsed
+        self._git_fork_input.setText(owner)
+        if branch:
+            self._git_branch_input.setText(branch)
+
     def validate(self):
         if not self._git_fork_input.text().strip():
             return (False, "Git fork must not be empty.")
         if not self._git_branch_input.text().strip():
             return (False, "Git branch must not be empty.")
+        url = self._git_url_input.text().strip()
+        if url:
+            parsed = parse_github_branch_url(url)
+            if parsed is None:
+                return (False, "Could not parse the branch URL. Use a GitHub URL like "
+                               "https://github.com/<owner>/RPi-Jukebox-RFID/tree/<branch>.")
+            _, repo, _ = parsed
+            if repo != "RPi-Jukebox-RFID":
+                return (False, f"The URL points to repository '{repo}', but the "
+                               "installer installs RPi-Jukebox-RFID. Please use a "
+                               "URL for RPi-Jukebox-RFID.")
         if self._rfid_checkbox.isChecked() and not self._rfid_reader_combo.currentData():
             return (False, "RFID reader is enabled — please select a reader type "
                            "or disable the RFID reader.")
