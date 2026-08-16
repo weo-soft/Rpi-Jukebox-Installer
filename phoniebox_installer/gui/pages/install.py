@@ -1,10 +1,15 @@
 """Install page — live log and progress, plus post-install reboot countdown."""
 
+import socket
+import threading
+from urllib.parse import urlparse
+
 from PySide6.QtWidgets import (
     QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QProgressBar,
-    QPlainTextEdit, QMessageBox, QCheckBox,
+    QPlainTextEdit, QCheckBox,
 )
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QTimer, Signal, QUrl
+from PySide6.QtGui import QDesktopServices
 
 from phoniebox_installer.gui.pages.base import BasePage
 from phoniebox_installer.app.events import InstallEvents
@@ -18,6 +23,9 @@ class InstallPage(BasePage):
     title = "Installing Phoniebox"
     subtitle = "Live installation log and progress."
 
+    #: Emitted from the availability-poll thread; handled on the GUI thread.
+    _reachable = Signal(bool)
+
     def __init__(self, state, event_bus, controller=None, parent=None):
         super().__init__(state, event_bus, controller=controller, parent=parent)
         self._step_lines = []
@@ -28,10 +36,16 @@ class InstallPage(BasePage):
         self._countdown_remaining = REBOOT_COUNTDOWN_SECONDS
         self._reboot_sent = False
         self._reboot_cancelled = False
+        self._seen_down = False  # True once the Pi went offline during reboot
 
         self._timer = QTimer(self)
         self._timer.setInterval(1000)
         self._timer.timeout.connect(self._tick)
+
+        self._poll_timer = QTimer(self)
+        self._poll_timer.setInterval(3000)
+        self._poll_timer.timeout.connect(self._poll_availability)
+        self._reachable.connect(self._on_reachable)
 
         self._setup_ui()
 
@@ -54,6 +68,14 @@ class InstallPage(BasePage):
         )
         layout.addWidget(self._countdown_label)
 
+        # Busy spinner shown while the Pi reboots (until it is reachable again).
+        self._reboot_spinner = QProgressBar()
+        self._reboot_spinner.setRange(0, 0)  # indeterminate
+        self._reboot_spinner.setTextVisible(False)
+        self._reboot_spinner.setFixedHeight(16)
+        self._reboot_spinner.setVisible(False)
+        layout.addWidget(self._reboot_spinner)
+
         reboot_row = QHBoxLayout()
         self._restart_now_btn = QPushButton("🔄 Restart Now")
         self._restart_now_btn.clicked.connect(self._restart_now)
@@ -68,6 +90,13 @@ class InstallPage(BasePage):
         self._restart_now_btn.setVisible(False)
         self._cancel_reboot_btn.setVisible(False)
 
+        # Web interface button (shown after a successful install). Disabled
+        # while the Pi is rebooting and re-enabled once it is reachable again.
+        self._webapp_btn = QPushButton("🌐 Open Web Interface")
+        self._webapp_btn.clicked.connect(self._open_webapp)
+        layout.addWidget(self._webapp_btn)
+        self._webapp_btn.setVisible(False)
+
         log_row = QHBoxLayout()
         log_row.addWidget(QLabel("Live Log:"))
         log_row.addStretch()
@@ -81,10 +110,6 @@ class InstallPage(BasePage):
         self._log.setMaximumBlockCount(10000)
         layout.addWidget(self._log, stretch=1)
 
-        self._cancel_btn = QPushButton("Cancel Installation")
-        self._cancel_btn.clicked.connect(self._on_cancel_clicked)
-        layout.addWidget(self._cancel_btn)
-
     def on_enter(self):
         self.event_bus.subscribe(InstallEvents.INSTALL_STARTED, self._on_install_started)
         self.event_bus.subscribe(InstallEvents.INSTALL_OUTPUT, self._on_output)
@@ -92,9 +117,9 @@ class InstallPage(BasePage):
         self.event_bus.subscribe(InstallEvents.INSTALL_COMPLETED, self._on_completed)
         self.event_bus.subscribe(InstallEvents.INSTALL_FAILED, self._on_failed)
         self.event_bus.subscribe(InstallEvents.INSTALL_DETAIL, self._on_detail)
-        # Start the installation once. Re-entering the page (e.g. navigating
-        # back from the finish page) must not restart it — otherwise a
-        # completed install would be re-run against a rebooting Pi and fail.
+        # Start the installation once. Re-entering the page (e.g. via Back/Next)
+        # must not restart it — otherwise a completed install would be re-run
+        # against a rebooting Pi and fail.
         if self.controller is not None and not self._install_triggered:
             self._install_triggered = True
             self.controller.start_install()
@@ -106,14 +131,17 @@ class InstallPage(BasePage):
         self._log.clear()
         self._step_lines = []
         self._detail_lines = []
-        self._cancel_btn.setEnabled(True)
         # Reset any pending reboot countdown from a previous run.
         self._timer.stop()
+        self._poll_timer.stop()
         self._reboot_sent = False
         self._reboot_cancelled = False
+        self._seen_down = False
         self._countdown_label.setVisible(False)
+        self._reboot_spinner.setVisible(False)
         self._restart_now_btn.setVisible(False)
         self._cancel_reboot_btn.setVisible(False)
+        self._webapp_btn.setVisible(False)
 
     def _on_output(self, payload):
         line = payload.get("line", "")
@@ -145,7 +173,10 @@ class InstallPage(BasePage):
         # Stop the indeterminate animation and show a full bar.
         self._progress.setRange(0, 100)
         self._progress.setValue(100)
-        self._cancel_btn.setEnabled(False)
+        # Offer the web interface right here, next to the reboot countdown.
+        self._webapp_btn.setVisible(True)
+        self._webapp_btn.setEnabled(True)
+        self._webapp_btn.setText("🌐 Open Web Interface")
         # Start the auto-reboot countdown right here on the install page.
         self._start_countdown()
 
@@ -157,11 +188,13 @@ class InstallPage(BasePage):
         # Stop the indeterminate animation and show an empty bar.
         self._progress.setRange(0, 100)
         self._progress.setValue(0)
-        self._cancel_btn.setEnabled(False)
         self._timer.stop()
+        self._poll_timer.stop()
         self._countdown_label.setVisible(False)
+        self._reboot_spinner.setVisible(False)
         self._restart_now_btn.setVisible(False)
         self._cancel_reboot_btn.setVisible(False)
+        self._webapp_btn.setVisible(False)
 
     # ------------------------------------------------------------------
     # Reboot countdown (auto-reboot after a successful installation)
@@ -169,6 +202,9 @@ class InstallPage(BasePage):
 
     def _start_countdown(self):
         self._countdown_remaining = REBOOT_COUNTDOWN_SECONDS
+        self._countdown_label.setStyleSheet(
+            "font-size: 20px; font-weight: bold; color: #b04a00;"
+        )
         self._update_countdown_label()
         self._countdown_label.setVisible(True)
         self._restart_now_btn.setVisible(True)
@@ -203,8 +239,8 @@ class InstallPage(BasePage):
         self._countdown_label.setText(
             "Restart cancelled. You can restart the Pi manually later."
         )
-        self._restart_now_btn.setEnabled(False)
-        self._cancel_reboot_btn.setEnabled(False)
+        self._restart_now_btn.setVisible(False)
+        self._cancel_reboot_btn.setVisible(False)
 
     def _do_reboot(self):
         if self._reboot_sent or self._reboot_cancelled:
@@ -212,24 +248,74 @@ class InstallPage(BasePage):
         self._reboot_sent = True
         self._timer.stop()
         self._countdown_label.setText("🔄 Restarting the Raspberry Pi…")
-        self._restart_now_btn.setEnabled(False)
-        self._cancel_reboot_btn.setEnabled(False)
+        self._restart_now_btn.setVisible(False)
+        self._cancel_reboot_btn.setVisible(False)
+        # The web interface is unreachable while the Pi reboots: disable the
+        # button, show a spinner, and poll until it comes back online.
+        self._disable_webapp_for_reboot()
         if self.controller is not None:
             self.controller.reboot_target()
 
-    def _on_cancel_clicked(self):
-        reply = QMessageBox.question(
-            self,
-            "Cancel Installation",
-            "Are you sure you want to cancel?\n"
-            "The installation will be incomplete.\n\n"
-            "Note: cancelling during package installation (apt) may leave "
-            "the Pi half-configured.",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No,
-        )
-        if reply == QMessageBox.Yes and self.controller is not None:
-            self.controller.request_cancel()
+    # ------------------------------------------------------------------
+    # Web interface availability polling
+    # ------------------------------------------------------------------
+
+    def _disable_webapp_for_reboot(self):
+        self._webapp_btn.setEnabled(False)
+        self._webapp_btn.setText("⏳ Waiting for the Pi to come back online…")
+        self._seen_down = False
+        self._reboot_spinner.setVisible(True)
+        self._start_availability_poll()
+
+    def _start_availability_poll(self):
+        self._poll_timer.start()
+        self._poll_availability()
+
+    def _poll_availability(self):
+        if not self.state.target_host:
+            return
+        threading.Thread(target=self._emit_reachability, daemon=True).start()
+
+    def _emit_reachability(self):
+        self._reachable.emit(self._check_reachable())
+
+    def _check_reachable(self) -> bool:
+        """Return True if the web interface host/port accepts a connection."""
+        url = self.state.webapp_url or f"http://{self.state.target_host}"
+        parsed = urlparse(url)
+        host = parsed.hostname or self.state.target_host
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        if not host:
+            return False
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(2.0)
+                return s.connect_ex((host, port)) == 0
+        except OSError:
+            return False
+
+    def _on_reachable(self, reachable):
+        if reachable:
+            if self._seen_down:
+                # The Pi went offline and is back — restart complete.
+                self._poll_timer.stop()
+                self._reboot_spinner.setVisible(False)
+                self._countdown_label.setStyleSheet(
+                    "font-size: 20px; font-weight: bold; color: #2a7d2a;"
+                )
+                self._countdown_label.setText(
+                    "✅ Restart complete — the Raspberry Pi is back online. "
+                    "You can now close the installer."
+                )
+                self._webapp_btn.setEnabled(True)
+                self._webapp_btn.setText("🌐 Open Web Interface")
+            # else: still up from before the reboot took effect — keep polling.
+        else:
+            self._seen_down = True
+
+    def _open_webapp(self):
+        url = self.state.webapp_url or f"http://{self.state.target_host}"
+        QDesktopServices.openUrl(QUrl(url))
 
     def validate(self):
         if self.state.install_success:
