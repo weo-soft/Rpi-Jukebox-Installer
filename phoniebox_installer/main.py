@@ -14,6 +14,8 @@ from phoniebox_installer.app.event_bus import EventBus
 from phoniebox_installer.app.controller import InstallerController
 from phoniebox_installer.gui.wizard import Wizard
 from phoniebox_installer.ssh.connection import SshConnectionManager
+from phoniebox_installer.ssh.sftp import SftpWrapper
+from phoniebox_installer.installer.install import InstallManager
 from phoniebox_installer.util.theme import apply_light_theme
 
 logger = logging.getLogger(__name__)
@@ -79,6 +81,16 @@ class Application:
         # Create and inject the SSH connection manager (M3)
         self.ssh_manager = SshConnectionManager(self.event_bus)
         self.controller.set_ssh_manager(self.ssh_manager)
+
+        # Create and inject the installation manager (M12), wired to the
+        # SSH manager via an SFTP wrapper for the config upload.
+        self.sftp = SftpWrapper(self.ssh_manager)
+        self.install_manager = InstallManager(
+            self.event_bus,
+            sftp_wrapper=self.sftp,
+            ssh_connection=self.ssh_manager,
+        )
+        self.controller.set_install_manager(self.install_manager)
 
         # Force a light color scheme so the UI stays readable regardless of
         # the desktop theme (e.g. Breeze Dark leaves white text by default).
