@@ -53,7 +53,3 @@ include = ["phoniebox_installer*"]
 qt_api = "pyside6"
 testpaths = ["tests"]
 pythonpath = ["."]
-
-[tool.flake8]
-max-line-length = 100
-exclude = [".venv", ".git", "__pycache__", "build", "dist"]
