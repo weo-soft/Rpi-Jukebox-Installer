@@ -1,9 +1,12 @@
 """Network utilities: mDNS discovery and port scanning."""
 
 import concurrent.futures
+import json
 import logging
 import socket
 import threading
+import urllib.request
+from typing import List
 
 from zeroconf import ServiceBrowser, Zeroconf, ServiceStateChange
 
@@ -12,6 +15,52 @@ from phoniebox_installer.app.events import DiscoveryEvents, DeviceInfo
 logger = logging.getLogger(__name__)
 
 MDNS_SERVICE_TYPE = "_ssh._tcp.local."
+
+
+def fetch_github_branches(owner: str, repo: str = "RPi-Jukebox-RFID",
+                          timeout: float = 5.0) -> List[str]:
+    """Fetch the branch names of a public GitHub repository.
+
+    Uses the unauthenticated GitHub REST API (subject to the 60 requests/hour
+    per-IP rate limit), so callers should cache the result per ``owner``.
+    Returns an empty list on any failure (offline, private repository, rate
+    limit) so the caller can fall back to manual entry.
+
+    :param owner: GitHub user or organization (e.g. 'MiczFlor')
+    :param repo: Repository name (defaults to the Phoniebox repository)
+    :param timeout: Per-request timeout in seconds
+    :return: List of branch names
+    """
+    branches: List[str] = []
+    for page in range(1, 6):  # safety cap ~500 branches
+        url = (
+            f"https://api.github.com/repos/{owner}/{repo}/branches"
+            f"?per_page=100&page={page}"
+        )
+        try:
+            request = urllib.request.Request(
+                url,
+                headers={
+                    "Accept": "application/vnd.github+json",
+                    "User-Agent": "phoniebox-installer",
+                },
+            )
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                data = json.loads(response.read().decode("utf-8"))
+        except Exception as exc:
+            logger.debug("GitHub branch fetch failed for %s/%s: %s",
+                         owner, repo, exc)
+            break
+        if not isinstance(data, list):
+            break
+        branches.extend(
+            entry["name"]
+            for entry in data
+            if isinstance(entry, dict) and entry.get("name")
+        )
+        if len(data) < 100:  # page not full -> no further pages
+            break
+    return branches
 
 
 class MdnsDiscovery:
