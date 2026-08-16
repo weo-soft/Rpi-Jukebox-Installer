@@ -8,6 +8,7 @@ from PySide6.QtCore import Qt
 
 from phoniebox_installer.gui.pages.base import BasePage
 from phoniebox_installer.util.resources import get_resource_path
+from phoniebox_installer.app.events import WizardEvents
 
 
 class WelcomePage(BasePage):
@@ -79,7 +80,7 @@ class WelcomePage(BasePage):
             "New Installation",
             "Set up a fresh Phoniebox\non a new Raspberry Pi",
         )
-        self._new_btn.clicked.connect(lambda: self._select_mode("new"))
+        self._new_btn.clicked.connect(self._on_new_clicked)
         cards_layout.addWidget(self._new_btn)
 
         # Update card (disabled in v1 — future goal)
@@ -135,6 +136,11 @@ class WelcomePage(BasePage):
         # Visual feedback
         self._new_btn.setChecked(mode == "new")
         self._update_btn.setChecked(mode == "update")
+
+    def _on_new_clicked(self):
+        """Select 'new installation' and navigate to the next page."""
+        self._select_mode("new")
+        self.event_bus.publish(WizardEvents.ADVANCE, {"page_id": self.page_id})
 
     # ------------------------------------------------------------------
     # Lifecycle

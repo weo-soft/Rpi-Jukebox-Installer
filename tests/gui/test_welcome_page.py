@@ -31,6 +31,19 @@ def test_update_option_disabled(qapp):
     assert not page._update_btn.isEnabled()
 
 
+def test_click_new_selects_and_advances(qapp):
+    """Clicking 'New Installation' selects the mode and advances."""
+    page = _make_page()
+    advances = []
+    page.event_bus.subscribe(
+        "wizard.advance", lambda payload: advances.append(payload)
+    )
+    page._new_btn.click()
+    assert page._selected_mode == "new"
+    assert page._new_btn.isChecked()
+    assert advances == [{"page_id": "welcome"}]
+
+
 def test_validate_fails_without_selection(qapp):
     """validate() fails when no mode has been selected."""
     page = _make_page()
