@@ -225,3 +225,13 @@ class InstallerController:
         self.state.install_message = payload.get('error', 'Installation failed')
         logger.error(f"Installation failed: {self.state.install_message}")
 
+    def reboot_target(self):
+        """Reboot the target Raspberry Pi via SSH (best-effort, M14)."""
+        if self._ssh_manager is None or not self._ssh_manager.is_connected:
+            logger.error("Cannot reboot: SSH not connected")
+            return
+        try:
+            self._ssh_manager.exec_command("sudo reboot")
+        except Exception as e:
+            logger.error(f"Reboot failed: {e}")
+
