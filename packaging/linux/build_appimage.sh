@@ -20,6 +20,14 @@ fi
 APP="phoniebox-installer"
 VERSION=$(python -c "import phoniebox_installer; print(phoniebox_installer.__version__)")
 
+# The stylesheet no longer uses icon files, but the desktop entry and the
+# welcome page logo rely on phoniebox_logo.png. Fail early if it is missing.
+if [[ ! -f "phoniebox_installer/resources/icons/phoniebox_logo.png" ]]; then
+    echo "ERROR: missing resource phoniebox_installer/resources/icons/phoniebox_logo.png" >&2
+    echo "       The AppImage would ship without the application logo." >&2
+    exit 1
+fi
+
 # Build with PyInstaller. Use --onedir (not --onefile): the AppImage squashfs
 # already compresses the payload, and a onefile archive inside would only bloat
 # it and defeat that compression. On Linux the --add-data separator is ':'; the
@@ -137,8 +145,16 @@ else
     APPIMAGETOOL="appimagetool"
 fi
 
-ARCH=x86_64 "$APPIMAGETOOL" --comp xz "$APPDIR" "Phoniebox-Installer-${VERSION}-x86_64.AppImage"
-echo "AppImage created: Phoniebox-Installer-${VERSION}-x86_64.AppImage"
+OUT="Phoniebox-Installer-${VERSION}-x86_64.AppImage"
+
+# Build to a temporary name and atomically rename it into place. appimagetool
+# refuses to overwrite a *running* AppImage ("Text file busy"), which would
+# otherwise abort the build here and silently leave an old/stale AppImage on
+# disk. `mv -f` replaces the directory entry even when an old instance is
+# still executing, so a rebuild always wins.
+ARCH=x86_64 "$APPIMAGETOOL" --comp xz "$APPDIR" "${OUT}.tmp"
+mv -f "${OUT}.tmp" "$OUT"
+echo "AppImage created: $OUT"
 
 # The AppImage is the only deliverable: it embeds usr/bin/phoniebox-installer
 # *and* usr/bin/_internal/ inside its SquashFS. Remove the intermediate
