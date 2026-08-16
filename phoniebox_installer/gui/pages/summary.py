@@ -101,4 +101,3 @@ class SummaryPage(BasePage):
 
     def validate(self):
         return (True, "")
-

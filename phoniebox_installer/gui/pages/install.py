@@ -93,4 +93,3 @@ class InstallPage(BasePage):
         self.event_bus.unsubscribe(InstallEvents.INSTALL_PROGRESS, self._on_progress)
         self.event_bus.unsubscribe(InstallEvents.INSTALL_COMPLETED, self._on_completed)
         self.event_bus.unsubscribe(InstallEvents.INSTALL_FAILED, self._on_failed)
-

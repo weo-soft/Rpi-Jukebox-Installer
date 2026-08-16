@@ -14,11 +14,15 @@ CHECKS = [
     ("disk_free_mb", "Free disk (MB)", "df -m / | tail -1 | awk '{print $4}'", "warn"),
     ("disk_total_mb", "Total disk (MB)", "df -m / | tail -1 | awk '{print $2}'", "info"),
     ("memory_mb", "RAM (MB)", "free -m | grep Mem | awk '{print $2}'", "info"),
-    ("has_internet", "Internet", "ping -c 1 -W 2 8.8.8.8 >/dev/null 2>&1 && echo yes || echo no", "critical"),
+    ("has_internet", "Internet",
+     "ping -c 1 -W 2 8.8.8.8 >/dev/null 2>&1 && echo yes || echo no",
+     "critical"),
     ("has_git", "Git", "which git >/dev/null 2>&1 && echo yes || echo no", "warn"),
     ("has_python", "Python 3", "python3 --version 2>&1", "critical"),
-    ("existing_installation", "Existing installation", "test -d ~/RPi-Jukebox-RFID && echo yes || echo no", "warn"),
-    ("existing_version", "Installed version", "python ~/RPi-Jukebox-RFID/src/jukebox/jukebox/version.py 2>/dev/null", "info"),
+    ("existing_installation", "Existing installation",
+     "test -d ~/RPi-Jukebox-RFID && echo yes || echo no", "warn"),
+    ("existing_version", "Installed version",
+     "python ~/RPi-Jukebox-RFID/src/jukebox/jukebox/version.py 2>/dev/null", "info"),
 ]
 
 

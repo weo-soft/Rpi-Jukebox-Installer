@@ -11,7 +11,6 @@ from pathlib import Path
 from PySide6.QtWidgets import QApplication, QMainWindow
 
 from phoniebox_installer.app.event_bus import EventBus
-from phoniebox_installer.app.state import InstallerState
 from phoniebox_installer.app.controller import InstallerController
 from phoniebox_installer.gui.wizard import Wizard
 from phoniebox_installer.ssh.connection import SshConnectionManager
@@ -166,4 +165,3 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
-

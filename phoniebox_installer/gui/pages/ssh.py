@@ -163,5 +163,3 @@ class SshCredentialsPage(BasePage):
         self.event_bus.unsubscribe(SshEvents.HOST_KEY_UNKNOWN, self._on_host_key_unknown)
         self.event_bus.unsubscribe(SshEvents.HOST_KEY_CHANGED, self._on_host_key_changed)
         self.event_bus.unsubscribe(SshEvents.HOST_KEY_REJECTED, self._on_host_key_rejected)
-
-

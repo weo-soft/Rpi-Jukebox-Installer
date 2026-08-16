@@ -73,4 +73,3 @@ class FinishPage(BasePage):
         """On finish, optionally reboot the Pi via SSH."""
         if self._restart_checkbox.isChecked() and self.controller is not None:
             self.controller.reboot_target()
-

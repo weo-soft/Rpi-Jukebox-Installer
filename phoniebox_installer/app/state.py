@@ -54,7 +54,8 @@ class InstallerState:
     has_python: bool = False
     existing_installation: bool = False
     existing_version: str = ""
-    existing_install_action: str = ""  # "" | "remove" | "backup" — gewählt bei bestehender Installation (M8)
+    # "" | "remove" | "backup" — gewählt bei bestehender Installation (M8)
+    existing_install_action: str = ""
 
     # =========================================================================
     # Installation Options (populated by OptionsPage, M10)

@@ -118,4 +118,3 @@ class DiscoverPage(BasePage):
         elif self._selected_device:
             self.state.target_host = self._selected_device.ip_address
             self.state.target_hostname = self._selected_device.hostname
-

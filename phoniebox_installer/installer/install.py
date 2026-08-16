@@ -206,4 +206,3 @@ class InstallManager:
     def _on_cancel(self, payload: dict):
         """Handle cancellation request."""
         self.cancel()
-

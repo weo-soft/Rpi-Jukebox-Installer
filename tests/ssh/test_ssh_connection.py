@@ -234,4 +234,3 @@ class TestSshConnection:
 
         assert b"\x03" in channel._sent
         assert any("pkill -f install-jukebox.sh" in c for c in client.exec_calls)
-

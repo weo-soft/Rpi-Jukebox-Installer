@@ -259,8 +259,10 @@ class SshConnectionManager:
         # Accept: register the key so connect() proceeds and save_host_keys persists it.
         client.get_host_keys().add(hostname, key.get_name(), key)
 
-    def _connect_thread(self, host: str, port: int, user: str,
-                         password: str, key_filename: Optional[str]):
+    def _connect_thread(
+        self, host: str, port: int, user: str,
+        password: str, key_filename: Optional[str],
+    ):
         """Background thread: establish SSH connection (TOFU host keys)."""
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(_TrustOnFirstUsePolicy(self))
@@ -386,7 +388,3 @@ class SshConnectionManager:
                 except Exception as e:
                     logger.error(f"Keep-alive failed: {e}")
                     break
-
-
-
-

@@ -233,4 +233,3 @@ class InstallerController:
             self._ssh_manager.exec_command("sudo reboot")
         except Exception as e:
             logger.error(f"Reboot failed: {e}")
-

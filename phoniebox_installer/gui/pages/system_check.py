@@ -53,4 +53,3 @@ class SystemCheckPage(BasePage):
 
     def on_leave(self):
         self.event_bus.unsubscribe(CheckEvents.CHECK_COMPLETED, self._on_completed)
-

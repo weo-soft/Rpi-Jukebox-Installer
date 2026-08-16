@@ -155,4 +155,3 @@ class WelcomePage(BasePage):
         """Save selected mode to state."""
         if self._selected_mode:
             self.state.mode = self._selected_mode
-

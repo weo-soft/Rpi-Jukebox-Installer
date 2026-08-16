@@ -33,7 +33,7 @@ class SshEvents:
     DISCONNECT_REQUEST = "ssh.disconnect"  # request to close the connection
     HOST_KEY_UNKNOWN = "ssh.host_key_unknown"   # first connect: needs user confirmation
     HOST_KEY_CHANGED = "ssh.host_key_changed"   # key mismatch vs known_hosts
-    HOST_KEY_REJECTED = "ssh.host_key_rejected" # user declined the unknown key
+    HOST_KEY_REJECTED = "ssh.host_key_rejected"  # user declined the unknown key
 
 
 class DiscoveryEvents:

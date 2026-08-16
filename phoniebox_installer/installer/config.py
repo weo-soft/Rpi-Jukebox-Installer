@@ -14,7 +14,7 @@ import os
 import logging
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List
 
 from ruamel.yaml import YAML
 
@@ -252,4 +252,3 @@ class ConfigManager:
         jukebox.audio_interface / installation_path / music_folder key.
         """
         return {}
-

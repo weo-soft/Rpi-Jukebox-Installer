@@ -66,7 +66,9 @@ class OptionsPage(BasePage):
         self._ipv6_checkbox = self._add_checkbox(sys_layout, "Disable IPv6", True)
         self._autohotspot_checkbox = self._add_checkbox(sys_layout, "Autohotspot", False)
         self._bluetooth_checkbox = self._add_checkbox(sys_layout, "Disable Bluetooth", True)
-        self._onboard_audio_checkbox = self._add_checkbox(sys_layout, "Disable on-chip audio", False)
+        self._onboard_audio_checkbox = self._add_checkbox(
+            sys_layout, "Disable on-chip audio", False
+        )
         self._mpd_checkbox = self._add_checkbox(sys_layout, "Setup MPD", True)
         self._mpd_overwrite_checkbox = self._add_checkbox(sys_layout, "Overwrite MPD config", True)
         self._update_os_checkbox = self._add_checkbox(sys_layout, "Update OS", False)
@@ -89,7 +91,9 @@ class OptionsPage(BasePage):
 
         self._samba_checkbox = self._add_checkbox(services_layout, "Samba", False)
         self._webapp_checkbox = self._add_checkbox(services_layout, "WebApp", True)
-        self._kiosk_checkbox = self._add_checkbox(services_layout, "Kiosk Mode (full-screen WebUI)", False)
+        self._kiosk_checkbox = self._add_checkbox(
+            services_layout, "Kiosk Mode (full-screen WebUI)", False
+        )
         layout.addWidget(services_group)
 
         # ---- Audio ----
@@ -200,6 +204,6 @@ class OptionsPage(BasePage):
         self.state.enable_webapp = self._webapp_checkbox.isChecked()
         self.state.enable_kiosk_mode = self._kiosk_checkbox.isChecked()
         self.state.audio_hifiberry_board = self._hifiberry_combo.currentData() or ""
-        self.state.enable_webapp_prod_download = self._webapp_bundle_combo.currentData() or "release-only"
-
-
+        self.state.enable_webapp_prod_download = (
+            self._webapp_bundle_combo.currentData() or "release-only"
+        )

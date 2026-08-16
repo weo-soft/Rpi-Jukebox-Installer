@@ -250,4 +250,3 @@ class Wizard(QWidget):
         self._next_btn.setEnabled(True)
         self._cancel_btn.setEnabled(True)
         self.set_page(self._page_index("summary"))
-
