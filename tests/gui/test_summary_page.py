@@ -49,6 +49,52 @@ def test_validate_always_passes(qapp):
     assert page.validate() == (True, "")
 
 
+def test_existing_installation_shows_choice(qapp):
+    """An existing installation shows the remove/backup choice (default backup)."""
+    page = _make_page()
+    page.state.existing_installation = True
+    page.on_enter()
+    assert not page._existing_group.isHidden()
+    assert page._backup_radio.isChecked()
+    assert not page._remove_radio.isChecked()
+
+
+def test_group_hidden_without_existing_installation(qapp):
+    """The action choice is hidden when no existing installation was found."""
+    page = _make_page()
+    page.state.existing_installation = False
+    page.on_enter()
+    assert page._existing_group.isHidden()
+
+
+def test_backup_choice_saved_on_leave(qapp):
+    """The default backup choice is persisted to state on leave."""
+    page = _make_page()
+    page.state.existing_installation = True
+    page.on_enter()
+    page.on_leave()
+    assert page.state.existing_install_action == "backup"
+
+
+def test_remove_choice_saved_on_leave(qapp):
+    """Selecting 'Remove' is persisted to state on leave."""
+    page = _make_page()
+    page.state.existing_installation = True
+    page.on_enter()
+    page._remove_radio.setChecked(True)
+    page.on_leave()
+    assert page.state.existing_install_action == "remove"
+
+
+def test_remove_choice_restored_on_enter(qapp):
+    """A previously chosen 'remove' action is restored on re-entry."""
+    page = _make_page()
+    page.state.existing_installation = True
+    page.state.existing_install_action = "remove"
+    page.on_enter()
+    assert page._remove_radio.isChecked()
+
+
 def test_next_button_advances_to_install(qapp):
     """'Next' on the summary page advances to the install page."""
     state = InstallerState()

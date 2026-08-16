@@ -1,7 +1,8 @@
-"""Summary page — read-only review of all choices."""
+"""Summary page — review of all choices (incl. existing-install action)."""
 
 from PySide6.QtWidgets import (
     QLabel, QVBoxLayout, QScrollArea, QWidget, QGroupBox,
+    QRadioButton, QButtonGroup,
 )
 
 from phoniebox_installer.gui.pages.base import BasePage
@@ -16,6 +17,9 @@ class SummaryPage(BasePage):
         super().__init__(state, event_bus, controller=controller, parent=parent)
         self._warning_label = None
         self._summary_labels = {}
+        self._existing_group = None
+        self._backup_radio = None
+        self._remove_radio = None
         self._setup_ui()
 
     def _setup_ui(self):
@@ -35,6 +39,19 @@ class SummaryPage(BasePage):
         self._warning_label.setWordWrap(True)
         self._warning_label.setStyleSheet("color: #b58900; font-weight: bold;")
         layout.addWidget(self._warning_label)
+
+        # Existing-installation action choice (only visible when one exists).
+        self._existing_group = QGroupBox("Existing Installation")
+        existing_layout = QVBoxLayout(self._existing_group)
+        self._backup_radio = QRadioButton("Backup the existing installation")
+        self._remove_radio = QRadioButton("Remove the existing installation")
+        self._action_group = QButtonGroup(self)
+        self._action_group.addButton(self._backup_radio)
+        self._action_group.addButton(self._remove_radio)
+        existing_layout.addWidget(self._backup_radio)
+        existing_layout.addWidget(self._remove_radio)
+        layout.addWidget(self._existing_group)
+        self._existing_group.setVisible(False)
 
         self._add_section(layout, "Mode", "mode")
         self._add_section(layout, "System", "system")
@@ -88,16 +105,29 @@ class SummaryPage(BasePage):
         )
 
         if s.existing_installation:
-            action = s.existing_install_action or "backup"
+            self._existing_group.setVisible(True)
+            if s.existing_install_action == "remove":
+                self._remove_radio.setChecked(True)
+            else:
+                self._backup_radio.setChecked(True)
             self._warning_label.setText(
-                f"⚠️ Existing installation found — action: {action}"
-            )
-        elif s.mode == "update":
-            self._warning_label.setText(
-                "⚠️ Update mode — upgrading an existing installation."
+                "⚠️ Existing installation found — choose how to proceed:"
             )
         else:
-            self._warning_label.setText("")
+            self._existing_group.setVisible(False)
+            if s.mode == "update":
+                self._warning_label.setText(
+                    "⚠️ Update mode — upgrading an existing installation."
+                )
+            else:
+                self._warning_label.setText("")
 
     def validate(self):
         return (True, "")
+
+    def on_leave(self):
+        """Persist the existing-install action choice to state."""
+        if self.state.existing_installation:
+            self.state.existing_install_action = (
+                "remove" if self._remove_radio.isChecked() else "backup"
+            )
