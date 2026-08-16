@@ -79,7 +79,7 @@ class ConfigManager:
     """
 
     def __init__(self, config_path: Path = None):
-        self._config_path = config_path or DEFAULT_INSTALLER_CONFIG_PATH
+        self._config_path = Path(config_path) if config_path else DEFAULT_INSTALLER_CONFIG_PATH
         self._yaml = YAML()
         self._yaml.preserve_quotes = True
         self._data: dict = {}
