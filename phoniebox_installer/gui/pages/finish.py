@@ -1,6 +1,6 @@
-"""Finish page — installation result."""
+"""Finish page — installation result summary."""
 
-from PySide6.QtWidgets import QLabel, QVBoxLayout, QPushButton, QCheckBox
+from PySide6.QtWidgets import QLabel, QVBoxLayout, QPushButton
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtCore import QUrl
 
@@ -21,7 +21,8 @@ class FinishPage(BasePage):
         layout.setSpacing(12)
 
         self._headline = QLabel("")
-        self._headline.setStyleSheet("font-size: 20px; font-weight: bold;")
+        self._headline.setWordWrap(True)
+        self._headline.setStyleSheet("font-size: 24px; font-weight: bold;")
         layout.addWidget(self._headline)
 
         self._message = QLabel("")
@@ -31,9 +32,6 @@ class FinishPage(BasePage):
         self._webapp_link = QPushButton("🌐 Open Web Interface")
         self._webapp_link.clicked.connect(self._open_webapp)
         layout.addWidget(self._webapp_link)
-
-        self._restart_checkbox = QCheckBox("Restart Raspberry Pi now")
-        layout.addWidget(self._restart_checkbox)
 
         self._error_label = QLabel("")
         self._error_label.setWordWrap(True)
@@ -47,20 +45,24 @@ class FinishPage(BasePage):
         s = self.state
         if s.install_success:
             self._headline.setText("✅ Installation Complete!")
+            self._headline.setStyleSheet(
+                "font-size: 24px; font-weight: bold; color: #2a7d2a;"
+            )
             self._message.setText(
                 "Phoniebox has been successfully installed on your Raspberry Pi."
             )
             url = s.webapp_url or f"http://{s.target_host}"
             self._webapp_link.setText(f"🌐 Open Web Interface\n{url}")
             self._webapp_link.setVisible(True)
-            self._restart_checkbox.setVisible(True)
             self._error_label.setText("")
         else:
             self._headline.setText("❌ Installation Failed")
+            self._headline.setStyleSheet(
+                "font-size: 24px; font-weight: bold; color: #d33;"
+            )
             self._message.setText("The installation could not be completed.")
             self._error_label.setText(s.install_message or "Unknown error")
             self._webapp_link.setVisible(False)
-            self._restart_checkbox.setVisible(False)
 
     def _open_webapp(self):
         url = self.state.webapp_url or f"http://{self.state.target_host}"
@@ -68,8 +70,3 @@ class FinishPage(BasePage):
 
     def validate(self):
         return (True, "")
-
-    def commit(self):
-        """On finish, optionally reboot the Pi via SSH."""
-        if self._restart_checkbox.isChecked() and self.controller is not None:
-            self.controller.reboot_target()
