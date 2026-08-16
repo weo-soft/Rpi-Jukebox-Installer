@@ -210,6 +210,42 @@ class SshConnectionManager:
         except Exception as e:
             logger.warning(f"Remote kill failed: {e}")
 
+    def stream_command(self, command: str, on_line: Callable[[str], None],
+                       stop_event: threading.Event):
+        """
+        Run a long-lived command, streaming stdout lines to ``on_line`` until
+        ``stop_event`` is set or the command's channel closes.
+
+        Unlike exec_command, this does not register the channel as the active
+        one, so it does not interfere with cancel_current() of the main
+        install. Used to tail the remote installation log file.
+        """
+        if not self.is_connected:
+            return
+        transport = self._client.get_transport()
+        if transport is None or not transport.is_active():
+            return
+
+        channel = transport.open_session()
+        channel.settimeout(1.0)
+        buffer = ""
+        try:
+            channel.exec_command(command)
+            while not stop_event.is_set():
+                if channel.recv_ready():
+                    buffer += channel.recv(4096).decode('utf-8', errors='replace')
+                    while '\n' in buffer:
+                        line, buffer = buffer.split('\n', 1)
+                        line = line.rstrip('\r')
+                        if line:
+                            on_line(line)
+                elif channel.closed:
+                    break
+                else:
+                    time.sleep(0.05)
+        finally:
+            channel.close()
+
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------

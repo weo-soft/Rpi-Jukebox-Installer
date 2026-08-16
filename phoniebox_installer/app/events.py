@@ -59,6 +59,7 @@ class InstallEvents:
     INSTALL_PROGRESS = "install.progress"
     INSTALL_COMPLETED = "install.completed"
     INSTALL_FAILED = "install.failed"
+    INSTALL_DETAIL = "install.detail"   # detailed remote log (tailed INSTALL-*.log)
 
 
 class WizardEvents:
