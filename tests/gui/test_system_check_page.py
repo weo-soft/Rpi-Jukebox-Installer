@@ -21,17 +21,17 @@ def _all_pass_status():
 
 
 def test_all_checks_populated(qapp):
-    """All 14 checks appear in the table."""
+    """All checks appear in the table."""
     page = _make_page()
     assert page._table.rowCount() == len(CHECKS)
-    assert len(CHECKS) == 14
+    assert len(CHECKS) == 12
 
 
 def test_validate_blocks_on_failed_critical(qapp):
     """A failed critical check blocks 'Next'."""
     page = _make_page()
     page._results = {
-        "status": {"os_version": "fail", "has_git": "pass", "has_internet": "pass"},
+        "status": {"os_version": "fail"},
     }
     valid, _ = page.validate()
     assert valid is False
@@ -55,11 +55,11 @@ def test_disk_free_warn_only_does_not_block(qapp):
     assert valid is True
 
 
-def test_warning_does_not_block(qapp):
-    """A warning (e.g. missing docker/pip) does not block."""
+def test_git_missing_warn_does_not_block(qapp):
+    """Git missing (warn) does not block a fresh installation."""
     page = _make_page()
     status = _all_pass_status()
-    status["has_docker"] = "warn"
+    status["has_git"] = "warn"
     page._results = {"status": status}
     valid, _ = page.validate()
     assert valid is True
