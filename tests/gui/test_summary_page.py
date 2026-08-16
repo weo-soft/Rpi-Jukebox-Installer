@@ -1,5 +1,7 @@
 """Tests for the SummaryPage."""
 
+from PySide6.QtWidgets import QHBoxLayout
+
 from phoniebox_installer.app.event_bus import EventBus
 from phoniebox_installer.app.state import InstallerState
 from phoniebox_installer.gui.wizard import Wizard
@@ -15,6 +17,83 @@ def _make_page():
 
 def _all_text(page):
     return " ".join(label.text() for label in page._summary_labels.values())
+
+
+def _columns_layout(page):
+    """Return the top-level QHBoxLayout holding the two summary columns."""
+    content = page.layout().itemAt(0).widget().widget()
+    main = content.layout()
+    for i in range(main.count()):
+        item = main.itemAt(i)
+        if item.layout() is not None and isinstance(item.layout(), QHBoxLayout):
+            return item.layout()
+    return None
+
+
+def test_summary_laid_out_in_two_columns(qapp):
+    """Summary groups are split into two side-by-side columns.
+
+    Left: the target machine (merged mode/system) and the git source.
+    Right: the configuration choices. The existing-install action is a
+    separate full-width container at the top (not part of a column).
+    """
+    page = _make_page()
+    columns = _columns_layout(page)
+    assert columns is not None
+    assert columns.count() == 2
+
+    left = columns.itemAt(0).layout()
+    left_titles = [
+        left.itemAt(i).widget().title()
+        for i in range(left.count())
+        if left.itemAt(i).widget()
+    ]
+    assert "Target & System" in left_titles
+    assert "Git Source" in left_titles
+
+    right = columns.itemAt(1).layout()
+    right_titles = [
+        right.itemAt(i).widget().title()
+        for i in range(right.count())
+        if right.itemAt(i).widget()
+    ]
+    assert "Options" in right_titles
+    assert "Audio" in right_titles
+    # The existing-install action is not tucked inside a column.
+    assert "Existing Installation" not in right_titles
+    assert "Existing Installation" not in left_titles
+
+    # The merged container still keeps mode and system as separate labels.
+    assert "mode" in page._summary_labels
+    assert "system" in page._summary_labels
+    assert page._summary_labels["mode"] is not page._summary_labels["system"]
+
+
+def test_existing_installation_full_width_above_columns(qapp):
+    """The existing-install action spans the full width above the columns."""
+    page = _make_page()
+    content = page.layout().itemAt(0).widget().widget()
+    main = content.layout()
+
+    # Order in the main vertical layout: warning, existing group, columns.
+    children = [
+        main.itemAt(i).widget()
+        for i in range(main.count())
+        if main.itemAt(i).widget()
+    ]
+    assert children[0] is page._warning_label
+    assert children[1] is page._existing_group
+    # The columns layout follows the existing group.
+    assert _columns_layout(page) is not None
+
+    # When shown, it spans the full width (not a column half).
+    page.state.existing_installation = True
+    page.on_enter()
+    page.show()
+    qapp.processEvents()
+    assert page._existing_group.isVisible()
+    center = page._existing_group.mapTo(page, page._existing_group.rect().center()).x()
+    assert abs(center - page.width() / 2.0) <= 1.0
 
 
 def test_all_state_fields_displayed(qapp):

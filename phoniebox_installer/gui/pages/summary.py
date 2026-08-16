@@ -1,7 +1,7 @@
 """Summary page — review of all choices (incl. existing-install action)."""
 
 from PySide6.QtWidgets import (
-    QLabel, QVBoxLayout, QScrollArea, QWidget, QGroupBox,
+    QLabel, QVBoxLayout, QHBoxLayout, QScrollArea, QWidget, QGroupBox,
     QRadioButton, QButtonGroup,
 )
 
@@ -41,6 +41,8 @@ class SummaryPage(BasePage):
         layout.addWidget(self._warning_label)
 
         # Existing-installation action choice (only visible when one exists).
+        # Placed full-width at the top: it is the most important decision when
+        # an existing installation is found.
         self._existing_group = QGroupBox("Existing Installation")
         existing_layout = QVBoxLayout(self._existing_group)
         self._backup_radio = QRadioButton("Backup the existing installation")
@@ -53,15 +55,31 @@ class SummaryPage(BasePage):
         layout.addWidget(self._existing_group)
         self._existing_group.setVisible(False)
 
-        self._add_section(layout, "Mode", "mode")
-        self._add_section(layout, "System", "system")
-        self._add_section(layout, "Git Source", "git")
-        self._add_section(layout, "Options", "options")
-        self._add_section(layout, "Audio", "audio")
+        # Side-by-side columns keep the page compact (no scrolling on a
+        # desktop window). Left: the target machine + install source.
+        # Right: the configuration choices.
+        columns = QHBoxLayout()
+        columns.setSpacing(12)
 
+        left_col = QVBoxLayout()
+        left_col.setSpacing(12)
+        # "Mode" and "System" both describe the target machine, so they share
+        # one container.
+        self._add_merged_section(left_col, "Target & System", ["mode", "system"])
+        self._add_section(left_col, "Git Source", "git")
+        columns.addLayout(left_col, stretch=1)
+
+        right_col = QVBoxLayout()
+        right_col.setSpacing(12)
+        self._add_section(right_col, "Options", "options")
+        self._add_section(right_col, "Audio", "audio")
+        columns.addLayout(right_col, stretch=1)
+
+        layout.addLayout(columns)
         layout.addStretch()
 
     def _add_section(self, layout, title, key):
+        """Add a titled group box holding one wrapped detail label."""
         group = QGroupBox(title)
         v = QVBoxLayout(group)
         label = QLabel("")
@@ -69,6 +87,18 @@ class SummaryPage(BasePage):
         v.addWidget(label)
         layout.addWidget(group)
         self._summary_labels[key] = label
+        return group
+
+    def _add_merged_section(self, layout, title, keys):
+        """Add one titled group box holding several detail labels."""
+        group = QGroupBox(title)
+        v = QVBoxLayout(group)
+        for key in keys:
+            label = QLabel("")
+            label.setWordWrap(True)
+            v.addWidget(label)
+            self._summary_labels[key] = label
+        layout.addWidget(group)
         return group
 
     def on_enter(self):
