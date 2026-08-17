@@ -6,6 +6,7 @@ from PySide6.QtCore import QCoreApplication
 from phoniebox_installer.app.event_bus import EventBus
 from phoniebox_installer.app.state import InstallerState
 from phoniebox_installer.app.events import InstallEvents
+from phoniebox_installer.installer import install as install_module
 from phoniebox_installer.installer.install import InstallManager, InstallPhase
 from phoniebox_installer.installer.repo import RepoSyncer
 
@@ -91,11 +92,16 @@ def test_source_check_existing_command_format(qapp):
     assert result == "NOT_FOUND"
 
 
-def test_install_failed_on_exception(qapp):
+def test_install_failed_on_exception(qapp, monkeypatch):
     """An exception during install publishes INSTALL_FAILED."""
+    def _no_config(*args, **kwargs):
+        # A script that does NOT declare --config -> _config_support_check raises.
+        return "#!/usr/bin/env bash\n# pre-config-era script\n"
+
+    monkeypatch.setattr(install_module, "fetch_github_file_text", _no_config)
+
     bus = EventBus()
-    # "MISSING" makes _config_support_check raise RuntimeError.
-    ssh = _FakeSsh(exit_status=0, lines=["MISSING"])
+    ssh = _FakeSsh(exit_status=0)
     mgr = InstallManager(bus, ssh_connection=ssh)
     received = []
     bus.subscribe(InstallEvents.INSTALL_FAILED, received.append)
@@ -107,14 +113,61 @@ def test_install_failed_on_exception(qapp):
     assert received[0]["error"]
 
 
-def test_config_support_check_raises_without_flag(qapp):
+def test_config_support_check_raises_without_flag(qapp, monkeypatch):
     """Script without --config → RuntimeError (no PTY fallback)."""
+    def _no_config(*args, **kwargs):
+        return "#!/usr/bin/env bash\n# pre-config-era script\n"
+
+    monkeypatch.setattr(install_module, "fetch_github_file_text", _no_config)
+
     bus = EventBus()
-    ssh = _FakeSsh(exit_status=0, lines=["MISSING"])
-    mgr = InstallManager(bus, ssh_connection=ssh)
+    mgr = InstallManager(bus)
 
     with pytest.raises(RuntimeError):
         mgr._config_support_check(InstallerState())
+
+
+def test_config_support_check_raises_when_source_unreachable(qapp, monkeypatch):
+    """A source that cannot be verified fails with the exact URL in the error."""
+    monkeypatch.setattr(install_module, "fetch_github_file_text",
+                        lambda *args, **kwargs: None)
+
+    state = InstallerState()
+    state.git_user = "weo-soft"
+    state.git_branch = "future3/feature/installer-noninteractive-config"
+
+    mgr = InstallManager(EventBus())
+    with pytest.raises(RuntimeError) as excinfo:
+        mgr._config_support_check(state)
+
+    assert "https://github.com/weo-soft/RPi-Jukebox-RFID/tree/" \
+           "future3/feature/installer-noninteractive-config" in str(excinfo.value)
+
+
+def test_config_support_check_passes_with_flag(qapp, monkeypatch):
+    """A script containing --config passes; the exact source is queried."""
+    calls = {}
+
+    def _with_config(owner, repo, path, ref, **kwargs):
+        calls["owner"] = owner
+        calls["path"] = path
+        calls["ref"] = ref
+        return "#!/usr/bin/env bash\n  --config) NON_INTERACTIVE=true ;;\n"
+
+    monkeypatch.setattr(install_module, "fetch_github_file_text", _with_config)
+
+    state = InstallerState()
+    state.git_user = "weo-soft"
+    state.git_branch = "future3/feature/installer-noninteractive-config"
+
+    mgr = InstallManager(EventBus())
+    mgr._config_support_check(state)  # must not raise
+
+    assert calls == {
+        "owner": "weo-soft",
+        "path": "installation/install-jukebox.sh",
+        "ref": "future3/feature/installer-noninteractive-config",
+    }
 
 
 def test_install_line_publishes_output_and_detects_logfile(qapp):

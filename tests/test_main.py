@@ -11,7 +11,7 @@ from PySide6.QtWidgets import QApplication
 def test_app_import():
     """Verify the package can be imported."""
     import phoniebox_installer
-    assert phoniebox_installer.__version__ == "0.1.1"
+    assert phoniebox_installer.__version__ == "0.1.2"
 
 
 def test_main_window_creation(qapp):

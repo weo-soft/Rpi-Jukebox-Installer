@@ -1,12 +1,14 @@
 """Network utilities: mDNS discovery and port scanning."""
 
+import base64
 import concurrent.futures
 import json
 import logging
 import socket
 import threading
+import urllib.parse
 import urllib.request
-from typing import List
+from typing import List, Optional
 
 from zeroconf import ServiceBrowser, Zeroconf, ServiceStateChange
 
@@ -61,6 +63,48 @@ def fetch_github_branches(owner: str, repo: str = "RPi-Jukebox-RFID",
         if len(data) < 100:  # page not full -> no further pages
             break
     return branches
+
+
+def fetch_github_file_text(owner: str, repo: str, path: str, ref: str,
+                           timeout: float = 5.0) -> Optional[str]:
+    """Fetch a text file's content at a specific ref via the GitHub REST API.
+
+    Unlike raw.githubusercontent.com, the contents API serves the exact branch
+    tip (no CDN staleness) and supports refs that contain slashes (e.g.
+    ``future3/feature/installer-noninteractive-config``) via URL-encoding.
+
+    :param owner: GitHub user or organization (e.g. 'weo-soft')
+    :param repo: Repository name (e.g. 'RPi-Jukebox-RFID')
+    :param path: Repository path of the file (e.g.
+        'installation/install-jukebox.sh')
+    :param ref: Branch name, tag or commit SHA to fetch at
+    :param timeout: Per-request timeout in seconds
+    :return: File content as text, or ``None`` on any failure
+    """
+    query = urllib.parse.urlencode({"ref": ref})
+    url = f"https://api.github.com/repos/{owner}/{repo}/contents/{path}?{query}"
+    try:
+        request = urllib.request.Request(
+            url,
+            headers={
+                "Accept": "application/vnd.github+json",
+                "User-Agent": "phoniebox-installer",
+            },
+        )
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        logger.debug("GitHub file fetch failed for %s/%s@%s: %s",
+                     owner, repo, ref, exc)
+        return None
+    if not isinstance(data, dict) or not data.get("content"):
+        return None
+    try:
+        return base64.b64decode(data["content"]).decode("utf-8", errors="replace")
+    except Exception as exc:
+        logger.debug("Failed to decode %s/%s@%s content: %s",
+                     owner, repo, ref, exc)
+        return None
 
 
 class MdnsDiscovery:

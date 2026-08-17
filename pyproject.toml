@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "phoniebox-installer"
-version = "0.1.1"
+version = "0.1.2"
 description = "Graphical installer for RPi-Jukebox-RFID (Phoniebox future3)"
 readme = "README.md"
 license = {text = "MIT"}

@@ -11,9 +11,10 @@ import threading
 import tempfile
 import os
 from enum import Enum
-from typing import Optional, Dict
+from typing import Optional
 
 from phoniebox_installer.app.events import InstallEvents, AppEvents
+from phoniebox_installer.util.network import fetch_github_file_text
 
 logger = logging.getLogger(__name__)
 
@@ -93,32 +94,40 @@ class InstallManager:
 
     def _config_support_check(self, state) -> None:
         """
-        Verify the target install-jukebox.sh supports `--config` (M18 Phase 1).
+        Verify the selected source's install-jukebox.sh supports `--config`.
 
-        Downloads the entry script once and greps it for the `--config` flag
-        via exec_command. Raises a clear RuntimeError if the flag is absent
-        (older script versions) — the installer does NOT fall back to any
-        PTY/prompt-simulation mode.
+        The check queries the GitHub contents API for the exact branch tip, so
+        it reflects the current state of the chosen fork/branch
+        (raw.githubusercontent.com can serve stale CDN content for freshly
+        pushed commits) and does not depend on the Pi's network stack.
+
+        :param state: Populated InstallerState (uses ``git_user``/``git_branch``)
+        :raises RuntimeError: if the source cannot be verified, or the script
+            does not declare the ``--config`` flag (the installer does NOT fall
+            back to any PTY/prompt-simulation mode).
         """
-        if self._ssh is None:
-            raise RuntimeError("SSH connection not available")
-
-        captured: Dict[str, str] = {}
-
-        def _on_line(line: str):
-            captured["last"] = line.strip()
-
-        cmd = (
-            f"wget -qO /tmp/install-jukebox.sh "
-            f"https://raw.githubusercontent.com/{state.git_user}/"
-            f"RPi-Jukebox-RFID/{state.git_branch}/installation/install-jukebox.sh && "
-            f"(grep -q -- '--config' /tmp/install-jukebox.sh && echo CONFIG || echo MISSING)"
+        source_url = (
+            f"https://github.com/{state.git_user}/"
+            f"RPi-Jukebox-RFID/tree/{state.git_branch}"
         )
-        self._ssh.exec_command(cmd, on_line=_on_line)
-        if captured.get("last") != "CONFIG":
+        script = fetch_github_file_text(
+            owner=state.git_user,
+            repo="RPi-Jukebox-RFID",
+            path="installation/install-jukebox.sh",
+            ref=state.git_branch,
+        )
+        if script is None:
             raise RuntimeError(
-                "install-jukebox.sh on this branch does not support --config. "
-                "Please update the Phoniebox installation scripts."
+                f"Could not verify install-jukebox.sh at {source_url}. "
+                "Check that the fork and branch are correct and that this "
+                "computer is online."
+            )
+        if "--config" not in script:
+            raise RuntimeError(
+                f"install-jukebox.sh on {source_url} does not support --config. "
+                "This branch predates the non-interactive installer — please "
+                "select a branch whose installation scripts support the "
+                "--config flag or update the Phoniebox installation scripts."
             )
 
     # ------------------------------------------------------------------
