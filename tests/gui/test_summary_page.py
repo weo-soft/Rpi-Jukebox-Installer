@@ -92,8 +92,22 @@ def test_existing_installation_full_width_above_columns(qapp):
     page.show()
     qapp.processEvents()
     assert page._existing_group.isVisible()
-    center = page._existing_group.mapTo(page, page._existing_group.rect().center()).x()
-    assert abs(center - page.width() / 2.0) <= 1.0
+
+    # Measure against the scroll content, not the page: depending on the
+    # platform and Qt version the content may be wider than the viewport
+    # (font metrics, scrollbars), but the group always stretches to the
+    # full content width.
+    margins = main.contentsMargins()
+    usable = content.width() - margins.left() - margins.right()
+    ratio = page._existing_group.width() / usable
+    assert ratio >= 0.9, f"existing group spans only {ratio:.0%} of the content width"
+
+    # The group is centered in the content (equal left/right margins).
+    left_gap = page._existing_group.x() - margins.left()
+    right_gap = (content.width() - page._existing_group.x()
+                 - page._existing_group.width()) - margins.right()
+    assert abs(left_gap) <= 2.0 and abs(right_gap) <= 2.0, \
+        f"existing group off-center in content (left gap {left_gap}, right gap {right_gap})"
 
 
 def test_all_state_fields_displayed(qapp):
