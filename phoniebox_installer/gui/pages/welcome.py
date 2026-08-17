@@ -9,6 +9,7 @@ from PySide6.QtCore import Qt
 from phoniebox_installer.gui.pages.base import BasePage
 from phoniebox_installer.util.resources import get_resource_path
 from phoniebox_installer.app.events import WizardEvents
+import phoniebox_installer
 
 
 class WelcomePage(BasePage):
@@ -97,8 +98,8 @@ class WelcomePage(BasePage):
         # Spacer bottom
         main_layout.addStretch()
 
-        # Version info
-        version_label = QLabel("v0.1.0 — future3")
+        # Version info (from the package version, so it never drifts).
+        version_label = QLabel(f"v{phoniebox_installer.__version__} — future3")
         version_label.setAlignment(Qt.AlignCenter)
         version_label.setStyleSheet("color: #999; font-size: 12px;")
         main_layout.addWidget(version_label)

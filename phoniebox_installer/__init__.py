@@ -8,5 +8,5 @@ Usage:
     python -m phoniebox_installer.main
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 __author__ = "Phoniebox Contributors"
