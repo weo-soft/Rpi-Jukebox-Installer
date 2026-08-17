@@ -5,21 +5,25 @@ import threading
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QLabel, QVBoxLayout, QHBoxLayout, QLineEdit,
-    QComboBox, QGroupBox, QScrollArea, QWidget, QCompleter,
+    QComboBox, QFrame, QGroupBox, QScrollArea, QWidget, QCompleter,
 )
 
 from phoniebox_installer.gui.pages.base import BasePage
-from phoniebox_installer.gui.widgets import CollapsibleGroupBox, CustomCheckBox
+from phoniebox_installer.gui.widgets import (
+    CollapsibleGroupBox, CustomCheckBox, InfoIcon,
+)
 from phoniebox_installer.util.validation import parse_github_branch_url
 from phoniebox_installer.util.network import fetch_github_branches
 
+#: (module name, display name) — the display names are the same labels the
+#: interactive install shows (components/rfid/hardware/<reader>/description.py).
 RFID_READERS = [
-    "pn532_i2c_py532",
-    "rc522_spi",
-    "rdm6300_serial",
-    "mfrc522_i2c",
-    "generic_nfcpy",
-    "generic_usb",
+    ("pn532_i2c_py532", "PN532 reader via I2C using py532 library"),
+    ("rc522_spi", "MFRC522 via SPI"),
+    ("rdm6300_serial", "RDM6300 via serial UART"),
+    ("mfrc522_i2c", "MFRC522 Reader using I2C via the mfrc522_i2c library"),
+    ("generic_nfcpy", "Generic NFCPY NFC Reader Module"),
+    ("generic_usb", "Generic USB Reader"),
 ]
 
 HIFIBERRY_BOARDS = [
@@ -29,7 +33,134 @@ HIFIBERRY_BOARDS = [
     "hifiberry-amp",
 ]
 
-WEBAPP_BUNDLE_MODES = ["release-only", "true"]
+#: (data value, display name) — the display names describe the bundle in
+#: user-facing terms; the data is the ENABLE_WEBAPP_PROD_DOWNLOAD value the
+#: install script consumes.
+WEBAPP_BUNDLE_MODES = [
+    ("release-only", "Upstream / default (release bundle)"),
+    ("true", "Fork / branch (development bundle)"),
+]
+
+
+#: Explanations behind the info icons, taken from the Phoniebox install
+#: scripts (installation/routines/customize_options.sh, setup_mpd.sh,
+#: components/setup_hifiberry.sh, includes/01_default_config.sh).
+OPTION_INFO = {
+    "git_url": (
+        "Branch URL",
+        "Paste a GitHub branch URL to auto-fill fork and branch, e.g.\n"
+        "https://github.com/<owner>/RPi-Jukebox-RFID/tree/<branch>",
+    ),
+    "git_fork": (
+        "Git Project/Fork",
+        "The GitHub user. The source is downloaded from "
+        "https://github.com/<fork>/RPi-Jukebox-RFID. Installing from a fork is "
+        "mainly for developers.",
+    ),
+    "git_branch": (
+        "Git Branch",
+        "The branch of the repository to install. Defaults to the upstream "
+        "release branch (future3/main). A specific branch or repository is "
+        "mainly for developers.",
+    ),
+    "webapp_bundle": (
+        "WebApp Bundle",
+        "Which precompiled WebApp bundle to download:\n"
+        "• Upstream / default — the exact-commit release bundle (default)\n"
+        "• Fork / branch — the exact-commit development bundle\n\n"
+        "Forks and development branches require the development bundle; "
+        "the release bundle only works with the upstream release branch.",
+    ),
+    "static_ip": (
+        "Static IP",
+        "Setting a static IP will save a lot of startup time.\n"
+        "The installer uses the currently dynamically assigned IP address, "
+        "including its gateway and interface.",
+    ),
+    "ipv6": (
+        "Disable IPv6",
+        "IPv6 is only needed if you intend to use it.\n"
+        "Otherwise it can be disabled.",
+    ),
+    "autohotspot": (
+        "Autohotspot",
+        "When enabled, this service spins up a WiFi hotspot when the Phoniebox "
+        "is unable to connect to a known WiFi. This way you can still access "
+        "it.\n\n"
+        "Note: Static IP configuration cannot be enabled together with the "
+        "WiFi hotspot.",
+    ),
+    "bluetooth": (
+        "Disable Bluetooth",
+        "Turning off Bluetooth will save energy and startup time, "
+        "if you do not plan to use it.",
+    ),
+    "onboard_audio": (
+        "Disable on-chip audio",
+        "If you are using an external sound card (e.g. USB, HiFiBerry, "
+        "PirateAudio, etc.), we recommend disabling the on-chip audio. It "
+        "makes the ALSA sound configuration easier.\n"
+        "If you are planning to only use Bluetooth speakers, leave the on-chip "
+        "audio enabled!\n\n"
+        "This touches your boot configuration file; a backup copy is written.",
+    ),
+    "mpd": (
+        "Setup MPD",
+        "Installs the Music Player Daemon (MPD) as a user service. It is "
+        "important that MPD runs as a user process rather than a system-wide "
+        "process.",
+    ),
+    "mpd_overwrite": (
+        "Overwrite MPD config",
+        "If MPD is already installed, overwrite its existing configuration. "
+        "Note: it is important that MPD runs as a user service.",
+    ),
+    "update_os": (
+        "Update OS",
+        "Updates the operating system (apt full-upgrade). This should be done "
+        "eventually, but increases the installation time a lot.",
+    ),
+    "rfid": (
+        "RFID Reader",
+        "Phoniebox can be controlled with RFID cards/tags if you have an RFID "
+        "reader connected. Select this to set up a reader.\n\n"
+        "Available readers:\n"
+        "• PN532 reader via I2C using py532 library\n"
+        "• MFRC522 via SPI\n"
+        "• RDM6300 via serial UART\n"
+        "• MFRC522 Reader using I2C via the mfrc522_i2c library\n"
+        "• Generic NFCPY NFC Reader Module\n"
+        "• Generic USB Reader",
+    ),
+    "samba": (
+        "Samba",
+        "The Web App can upload and manage files in the audio library. Samba "
+        "additionally provides direct network access to the complete shared "
+        "directory, including configuration files.",
+    ),
+    "webapp": (
+        "WebApp",
+        "This is only required if you want to use a graphical interface to "
+        "manage your Phoniebox.",
+    ),
+    "kiosk": (
+        "Kiosk Mode",
+        "If you have a screen attached to your RPi, this launches the Web App "
+        "right after boot. It only installs the necessary X server "
+        "dependencies, not the entire RPi desktop environment.\n\n"
+        "Due to limited resources, kiosk mode is not supported on Raspberry Pi "
+        "1 or Zero 1 (ARMv6 models).",
+    ),
+    "hifiberry": (
+        "HiFiBerry Board",
+        "Enables the device-tree overlay for a HiFiBerry audio HAT, e.g.\n"
+        "• hifiberry-dacplus — HiFiBerry DAC+ Standard/Pro/Amp2\n"
+        "• hifiberry-digi — HiFiBerry Digi+\n"
+        "• hifiberry-dac — HiFiBerry MiniAmp / I2S PCM5102A DAC\n"
+        "• hifiberry-amp — HiFiBerry Amp+ (not Amp2)\n\n"
+        "The on-chip audio is disabled automatically when a board is selected.",
+    ),
+}
 
 
 class OptionsPage(BasePage):
@@ -76,7 +207,10 @@ class OptionsPage(BasePage):
             "https://github.com/<owner>/RPi-Jukebox-RFID/tree/<branch>"
         )
         self._git_url_input.textChanged.connect(self._on_url_text_changed)
-        source_layout.addWidget(self._git_url_input)
+        url_row = QHBoxLayout()
+        url_row.addWidget(self._git_url_input, stretch=1)
+        url_row.addWidget(self._make_info_icon("git_url"))
+        source_layout.addLayout(url_row)
         self._url_hint_label = QLabel("")
         self._url_hint_label.setWordWrap(True)
         self._url_hint_label.setStyleSheet("color: #b04a00;")
@@ -89,7 +223,10 @@ class OptionsPage(BasePage):
         fork_col = QVBoxLayout()
         fork_col.addWidget(QLabel("Git Project/Fork:"))
         self._git_fork_input = QLineEdit("MiczFlor")
-        fork_col.addWidget(self._git_fork_input)
+        fork_input_row = QHBoxLayout()
+        fork_input_row.addWidget(self._git_fork_input, stretch=1)
+        fork_input_row.addWidget(self._make_info_icon("git_fork"))
+        fork_col.addLayout(fork_input_row)
         fork_branch_row.addLayout(fork_col, stretch=1)
 
         branch_col = QVBoxLayout()
@@ -98,7 +235,10 @@ class OptionsPage(BasePage):
         self._git_branch_combo.setEditable(True)
         self._git_branch_combo.setInsertPolicy(QComboBox.NoInsert)
         self._git_branch_combo.setCurrentText("future3/main")
-        branch_col.addWidget(self._git_branch_combo)
+        branch_input_row = QHBoxLayout()
+        branch_input_row.addWidget(self._git_branch_combo, stretch=1)
+        branch_input_row.addWidget(self._make_info_icon("git_branch"))
+        branch_col.addLayout(branch_input_row)
         fork_branch_row.addLayout(branch_col, stretch=1)
 
         source_layout.addLayout(fork_branch_row)
@@ -117,41 +257,49 @@ class OptionsPage(BasePage):
         # the commit-addressed development bundles (see _sync_webapp_bundle_to_source).
         source_layout.addWidget(QLabel("WebApp bundle:"))
         self._webapp_bundle_combo = QComboBox()
-        for mode in WEBAPP_BUNDLE_MODES:
-            self._webapp_bundle_combo.addItem(mode, mode)
-        source_layout.addWidget(self._webapp_bundle_combo)
+        for data, name in WEBAPP_BUNDLE_MODES:
+            self._webapp_bundle_combo.addItem(name, data)
+        bundle_row = QHBoxLayout()
+        bundle_row.addWidget(self._webapp_bundle_combo, stretch=1)
+        bundle_row.addWidget(self._make_info_icon("webapp_bundle"))
+        source_layout.addLayout(bundle_row)
 
-        # ---- System Options (left) | Services + Audio (right) ----
+        # ---- Services + Audio (left) | System Options (right) ----
         columns = QHBoxLayout()
         columns.setSpacing(12)
 
-        # Left column: System Options.
-        sys_group = QGroupBox("System Options")
-        sys_layout = QVBoxLayout(sys_group)
-        self._static_ip_checkbox = self._add_checkbox(sys_layout, "Static IP", True)
-        self._ipv6_checkbox = self._add_checkbox(sys_layout, "Disable IPv6", True)
-        self._autohotspot_checkbox = self._add_checkbox(sys_layout, "Autohotspot", False)
-        self._bluetooth_checkbox = self._add_checkbox(sys_layout, "Disable Bluetooth", True)
-        self._onboard_audio_checkbox = self._add_checkbox(
-            sys_layout, "Disable on-chip audio", False
-        )
-        self._mpd_checkbox = self._add_checkbox(sys_layout, "Setup MPD", True)
-        self._mpd_overwrite_checkbox = self._add_checkbox(sys_layout, "Overwrite MPD config", True)
-        self._update_os_checkbox = self._add_checkbox(sys_layout, "Update OS", False)
-        columns.addWidget(sys_group, stretch=1)
-
-        # Right column: Services on top, Audio below it. Both blocks are
-        # bottom-anchored so the two columns have the same height and end
-        # flush at the bottom.
-        right_col = QVBoxLayout()
-        right_col.setSpacing(12)
-
-        # Anchor the right block to the bottom so both columns end flush
-        # even when a container is collapsed.
-        right_col.addStretch()
+        # Left column: Services on top, Audio below it. The block is
+        # bottom-anchored so both columns end flush at the bottom (System
+        # Options on the right is the taller one).
+        left_col = QVBoxLayout()
+        left_col.setSpacing(12)
+        left_col.addStretch()
 
         services_group = QGroupBox("Services")
         services_layout = QVBoxLayout(services_group)
+
+        # RFID is the only option the user MUST decide on (enabled by default,
+        # but no reader type is pre-selected), so the row is highlighted.
+        rfid_frame = QFrame()
+        rfid_frame.setObjectName("rfidRequired")
+        rfid_frame.setStyleSheet("""
+            #rfidRequired {
+                background-color: #eef4fb;
+                border: 1px solid #1976d2;
+                border-radius: 6px;
+            }
+            /* No background-color on the combo: a stylesheet background on a
+               QComboBox also paints the popup's selected row and overlays the
+               selection highlight with a white box. */
+            #rfidRequired QComboBox[needsSelection="true"] {
+                border: 2px solid #b04a00;
+                border-radius: 4px;
+                padding: 2px 6px;
+            }
+        """)
+        rfid_frame_layout = QVBoxLayout(rfid_frame)
+        rfid_frame_layout.setContentsMargins(8, 6, 8, 6)
+        rfid_frame_layout.setSpacing(4)
 
         rfid_row = QHBoxLayout()
         self._rfid_checkbox = CustomCheckBox("RFID Reader")
@@ -159,17 +307,27 @@ class OptionsPage(BasePage):
         rfid_row.addWidget(self._rfid_checkbox)
         self._rfid_reader_combo = QComboBox()
         self._rfid_reader_combo.addItem("Select reader…", "")
-        for reader in RFID_READERS:
-            self._rfid_reader_combo.addItem(reader, reader)
+        for module, name in RFID_READERS:
+            self._rfid_reader_combo.addItem(name, module)
         rfid_row.addWidget(self._rfid_reader_combo, stretch=1)
-        services_layout.addLayout(rfid_row)
+        rfid_row.addWidget(self._make_info_icon("rfid"))
+        rfid_frame_layout.addLayout(rfid_row)
+        self._rfid_hint = QLabel("⚠️  Required — choose your RFID reader type.")
+        self._rfid_hint.setStyleSheet("color: #b04a00; font-size: 11px;")
+        rfid_frame_layout.addWidget(self._rfid_hint)
+        services_layout.addWidget(rfid_frame)
 
-        self._samba_checkbox = self._add_checkbox(services_layout, "Samba", False)
-        self._webapp_checkbox = self._add_checkbox(services_layout, "WebApp", True)
-        self._kiosk_checkbox = self._add_checkbox(
-            services_layout, "Kiosk Mode (full-screen WebUI)", False
+        self._samba_checkbox = self._add_checkbox(
+            services_layout, "Samba", False, info_key="samba"
         )
-        right_col.addWidget(services_group)
+        self._webapp_checkbox = self._add_checkbox(
+            services_layout, "WebApp", True, info_key="webapp"
+        )
+        self._kiosk_checkbox = self._add_checkbox(
+            services_layout, "Kiosk Mode (full-screen WebUI)", False,
+            info_key="kiosk",
+        )
+        left_col.addWidget(services_group)
 
         audio_group = QGroupBox("Audio")
         audio_layout = QVBoxLayout(audio_group)
@@ -178,11 +336,43 @@ class OptionsPage(BasePage):
         self._hifiberry_combo.addItem("None", "")
         for board in HIFIBERRY_BOARDS:
             self._hifiberry_combo.addItem(board, board)
-        audio_layout.addWidget(self._hifiberry_combo)
+        audio_row = QHBoxLayout()
+        audio_row.addWidget(self._hifiberry_combo, stretch=1)
+        audio_row.addWidget(self._make_info_icon("hifiberry"))
+        audio_layout.addLayout(audio_row)
         audio_layout.addWidget(QLabel("ℹ️  Select the audio HAT overlay (optional)"))
-        right_col.addWidget(audio_group)
+        left_col.addWidget(audio_group)
 
-        columns.addLayout(right_col, stretch=1)
+        columns.addLayout(left_col, stretch=1)
+
+        # Right column: System Options.
+        sys_group = QGroupBox("System Options")
+        sys_layout = QVBoxLayout(sys_group)
+        self._static_ip_checkbox = self._add_checkbox(
+            sys_layout, "Static IP", True, info_key="static_ip"
+        )
+        self._ipv6_checkbox = self._add_checkbox(
+            sys_layout, "Disable IPv6", True, info_key="ipv6"
+        )
+        self._autohotspot_checkbox = self._add_checkbox(
+            sys_layout, "Autohotspot", False, info_key="autohotspot"
+        )
+        self._bluetooth_checkbox = self._add_checkbox(
+            sys_layout, "Disable Bluetooth", True, info_key="bluetooth"
+        )
+        self._onboard_audio_checkbox = self._add_checkbox(
+            sys_layout, "Disable on-chip audio", False, info_key="onboard_audio"
+        )
+        self._mpd_checkbox = self._add_checkbox(
+            sys_layout, "Setup MPD", True, info_key="mpd"
+        )
+        self._mpd_overwrite_checkbox = self._add_checkbox(
+            sys_layout, "Overwrite MPD config", True, info_key="mpd_overwrite"
+        )
+        self._update_os_checkbox = self._add_checkbox(
+            sys_layout, "Update OS", False, info_key="update_os"
+        )
+        columns.addWidget(sys_group, stretch=1)
 
         layout.addLayout(columns)
 
@@ -193,17 +383,46 @@ class OptionsPage(BasePage):
         layout.addStretch()
 
         self._wire_dependencies()
+        self._update_rfid_highlight()
 
-    def _add_checkbox(self, layout, label, default):
+    def _update_rfid_highlight(self, *_args):
+        """Mark the reader combo (orange border) while a choice is required.
+
+        RFID is enabled by default but has no pre-selected module, so the user
+        must actively choose a reader type (or disable the reader).
+        """
+        needed = self._rfid_checkbox.isChecked() and not self._rfid_reader_combo.currentData()
+        self._rfid_reader_combo.setProperty("needsSelection", needed)
+        self._rfid_reader_combo.style().unpolish(self._rfid_reader_combo)
+        self._rfid_reader_combo.style().polish(self._rfid_reader_combo)
+        self._rfid_hint.setVisible(needed)
+
+    def _make_info_icon(self, key):
+        """Return an InfoIcon for the given OPTION_INFO key."""
+        title, text = OPTION_INFO[key]
+        return InfoIcon(title, text)
+
+    def _add_checkbox(self, layout, label, default, info_key=None):
+        """Add a checkbox row; optionally append an info icon at the end."""
         cb = CustomCheckBox(label)
         cb.setChecked(default)
-        layout.addWidget(cb)
+        if info_key:
+            row = QHBoxLayout()
+            row.setSpacing(8)
+            row.addWidget(cb)
+            row.addWidget(self._make_info_icon(info_key))
+            row.addStretch()
+            layout.addLayout(row)
+        else:
+            layout.addWidget(cb)
         return cb
 
     def _wire_dependencies(self):
         self._rfid_checkbox.toggled.connect(
             lambda checked: self._rfid_reader_combo.setEnabled(checked)
         )
+        self._rfid_checkbox.toggled.connect(self._update_rfid_highlight)
+        self._rfid_reader_combo.currentIndexChanged.connect(self._update_rfid_highlight)
         self._webapp_checkbox.toggled.connect(self._on_webapp_toggled)
         self._autohotspot_checkbox.toggled.connect(self._on_autohotspot_toggled)
         # A non-upstream source requires the development WebApp bundle.

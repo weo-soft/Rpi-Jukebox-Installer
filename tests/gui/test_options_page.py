@@ -1,11 +1,11 @@
 """Tests for the OptionsPage."""
 
-from PySide6.QtWidgets import QComboBox, QGroupBox
+from PySide6.QtWidgets import QComboBox, QGroupBox, QHBoxLayout
 
 from phoniebox_installer.app.event_bus import EventBus
 from phoniebox_installer.app.state import InstallerState
 from phoniebox_installer.gui.pages.options import OptionsPage
-from phoniebox_installer.gui.widgets import CollapsibleGroupBox
+from phoniebox_installer.gui.widgets import CollapsibleGroupBox, InfoIcon
 
 
 def _make_page():
@@ -209,6 +209,19 @@ def test_on_leave_persists_auto_selected_bundle(qapp):
     assert page.state.enable_webapp_prod_download == "true"
 
 
+def test_webapp_bundle_combo_shows_interpretable_names(qapp):
+    """The bundle dropdown shows user-facing names, keeping the data values."""
+    page = _make_page()
+    texts = [page._webapp_bundle_combo.itemText(i)
+             for i in range(page._webapp_bundle_combo.count())]
+    assert "Upstream / default (release bundle)" in texts
+    assert "Fork / branch (development bundle)" in texts
+    # The data values are the ENABLE_WEBAPP_PROD_DOWNLOAD contract.
+    assert page._webapp_bundle_combo.findData("release-only") >= 0
+    assert page._webapp_bundle_combo.findData("true") >= 0
+    assert page._webapp_bundle_combo.currentData() == "release-only"
+
+
 def _completer_names(page):
     model = page._branch_completer.model()
     return [
@@ -273,6 +286,57 @@ def _groups_by_title(page):
     }
 
 
+def _columns_layout(page):
+    """Return the top-level QHBoxLayout holding the two option columns."""
+    content = page.layout().itemAt(0).widget().widget()
+    main = content.layout()
+    for i in range(main.count()):
+        item = main.itemAt(i)
+        if item.layout() is not None and isinstance(item.layout(), QHBoxLayout):
+            return item.layout()
+    return None
+
+
+def test_services_audio_left_system_right(qapp):
+    """Services+Audio sit left, System Options right (swapped order)."""
+    page = _make_page()
+    columns = _columns_layout(page)
+    assert columns is not None
+    assert columns.count() == 2
+
+    left = columns.itemAt(0).layout()
+    left_titles = [
+        left.itemAt(i).widget().title()
+        for i in range(left.count())
+        if left.itemAt(i).widget()
+    ]
+    assert "Services" in left_titles
+    assert "Audio" in left_titles
+
+    right_widget = columns.itemAt(1).widget()
+    assert right_widget.title() == "System Options"
+
+
+def test_rfid_highlight_until_selection(qapp):
+    """The RFID combo is flagged (and the hint shown) until a choice is made."""
+    page = _make_page()
+    assert page._rfid_reader_combo.property("needsSelection") is True
+    assert page._rfid_hint.isHidden() is False
+
+    idx = page._rfid_reader_combo.findData("rc522_spi")
+    page._rfid_reader_combo.setCurrentIndex(idx)
+    assert page._rfid_reader_combo.property("needsSelection") is False
+    assert page._rfid_hint.isHidden() is True
+
+
+def test_rfid_highlight_cleared_when_disabled(qapp):
+    """Disabling the RFID reader clears the required-highlight."""
+    page = _make_page()
+    page._rfid_checkbox.setChecked(False)
+    assert page._rfid_reader_combo.property("needsSelection") is False
+    assert page._rfid_hint.isHidden() is True
+
+
 def test_source_group_collapsed_by_default(qapp):
     """The developer-focused Phoniebox Source group starts collapsed."""
     page = _make_page()
@@ -297,3 +361,31 @@ def test_collapsible_groups_toggle(qapp):
 
     source._toggle.click()          # collapse again
     assert source.is_collapsed()
+
+
+def test_every_option_entry_has_info_icon(qapp):
+    """Each option entry has an info icon with a description tooltip."""
+    page = _make_page()
+    icons = page.findChildren(InfoIcon)
+    # System (8) + Services (Samba, WebApp, Kiosk) + RFID row + Audio +
+    # Source (URL, fork, branch, bundle).
+    assert len(icons) == 17
+    for icon in icons:
+        assert icon._description, "info icon without a description"
+        assert len(icon._description) > 20, "description too short to be useful"
+
+
+def test_rfid_combo_shows_reader_names(qapp):
+    """The reader dropdown shows display names, the module stays as data."""
+    page = _make_page()
+    texts = [page._rfid_reader_combo.itemText(i)
+             for i in range(page._rfid_reader_combo.count())]
+    assert "PN532 reader via I2C using py532 library" in texts
+    assert "MFRC522 via SPI" in texts
+    assert "pn532_i2c_py532" not in texts  # no python package names
+
+    idx = page._rfid_reader_combo.findData("pn532_i2c_py532")
+    assert idx >= 0
+    page._rfid_reader_combo.setCurrentIndex(idx)
+    page.on_leave()
+    assert page.state.rfid_reader_module == "pn532_i2c_py532"

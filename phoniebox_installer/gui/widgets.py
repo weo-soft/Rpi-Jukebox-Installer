@@ -1,8 +1,89 @@
 """Reusable custom Qt widgets."""
 
-from PySide6.QtCore import QPointF, QRectF, Qt
+import html
+
+from PySide6.QtCore import QEvent, QPoint, QPointF, QRectF, QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QPainter, QPen, QPolygonF
-from PySide6.QtWidgets import QCheckBox, QGroupBox, QToolButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QAbstractButton, QCheckBox, QGroupBox, QMessageBox, QToolButton, QToolTip,
+    QVBoxLayout, QWidget,
+)
+
+
+def _wrap_tooltip(text: str) -> str:
+    """Return the description as a fixed-width, wrapped, high-contrast tooltip.
+
+    Qt tooltips do not wrap by default; constraining the width in the rich text
+    forces line wrapping. The colors are set explicitly so the tooltip stays
+    readable even when the desktop runs in dark mode.
+    """
+    escaped = html.escape(text).replace("\n", "<br>")
+    return (
+        "<div style='width: 380px; white-space: normal; "
+        "color: #333333; background-color: #ffffff; "
+        "padding: 6px 8px;'>{}</div>"
+    ).format(escaped)
+
+
+class InfoIcon(QAbstractButton):
+    """A clickable info icon with a fast, wrapped tooltip and a click popup.
+
+    The badge is painted instead of using an emoji so it never clips and looks
+    identical on every platform and theme. Hovering shows the description
+    almost immediately (``QToolTip.setDelay()`` is not exposed by PySide6, so
+    the widget displays the tooltip itself); a left click opens it in an
+    information dialog.
+    """
+
+    #: Delay before the tooltip appears (ms).
+    TOOLTIP_DELAY_MS = 150
+
+    def __init__(self, title: str, description: str, parent=None):
+        super().__init__(parent)
+        self._title = title
+        self._description = description
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFixedSize(18, 18)
+        self.setFocusPolicy(Qt.NoFocus)
+        self.clicked.connect(self._show_info)
+
+        self._tooltip_timer = QTimer(self)
+        self._tooltip_timer.setSingleShot(True)
+        self._tooltip_timer.setInterval(self.TOOLTIP_DELAY_MS)
+        self._tooltip_timer.timeout.connect(self._show_tooltip_now)
+        self.installEventFilter(self)
+
+    def _show_info(self):
+        QToolTip.hideText()
+        QMessageBox.information(self, self._title, self._description)
+
+    def _show_tooltip_now(self):
+        pos = self.mapToGlobal(QPoint(0, self.height() + 4))
+        QToolTip.showText(pos, _wrap_tooltip(self._description), self)
+
+    def eventFilter(self, watched, event):
+        if watched is self:
+            if event.type() == QEvent.Enter:
+                self._tooltip_timer.start()
+            elif event.type() == QEvent.Leave:
+                self._tooltip_timer.stop()
+                QToolTip.hideText()
+        return super().eventFilter(watched, event)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        color = QColor("#1976d2")
+        painter.setBrush(QColor("#ffffff"))
+        painter.setPen(QPen(color, 1.4))
+        painter.drawEllipse(QRectF(1, 1, 16, 16))
+        font = self.font()
+        font.setPixelSize(11)
+        font.setBold(True)
+        painter.setFont(font)
+        painter.setPen(color)
+        painter.drawText(QRectF(1, 1, 16, 16), Qt.AlignCenter, "i")
+        painter.end()
 
 
 class CollapsibleGroupBox(QGroupBox):
@@ -80,6 +161,18 @@ class CustomCheckBox(QCheckBox):
     #: Indicator side length in pixels.
     INDICATOR_SIZE = 16
 
+    def sizeHint(self):
+        """Ensure the painted indicator and label fit without clipping.
+
+        The native QCheckBox size hint assumes the default ~13 px indicator, so
+        the layout would otherwise size the widget a few pixels too small and
+        the self-painted label would be clipped at the right edge.
+        """
+        fm = self.fontMetrics()
+        width = self.INDICATOR_SIZE + 6 + fm.horizontalAdvance(self.text()) + 6
+        height = max(self.INDICATOR_SIZE, fm.height()) + 6
+        return QSize(width, height)
+
     def _focus_line_span(self) -> "tuple[QPointF, QPointF]":
         """Return start/end of the text underline used as the focus hint.
 
@@ -102,7 +195,17 @@ class CustomCheckBox(QCheckBox):
         painter.setRenderHint(QPainter.Antialiasing)
 
         size = self.INDICATOR_SIZE
-        rect = QRectF(0, (self.height() - size) / 2.0, size, size)
+        # Inset by half the pen width: the border is drawn centered on the
+        # path, so without the inset the left/top half of the stroke would be
+        # clipped at the widget edge (visually "cut off" left border).
+        pen_width = 1.5
+        inset = pen_width / 2.0
+        rect = QRectF(
+            inset,
+            (self.height() - (size - 2 * inset)) / 2.0,
+            size - 2 * inset,
+            size - 2 * inset,
+        )
 
         if not self.isEnabled():
             border = QColor("#c0c0c0")
