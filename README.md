@@ -47,6 +47,58 @@ The installer walks you through a six-step wizard:
    the Pi (or "Restart Now" / "Cancel Restart"); the installer waits for the Pi
    to come back online and then offers to open the Phoniebox web interface.
 
+## Screenshots
+
+The installer's wizard pages (in the order shown to the user):
+
+### Find Your Raspberry Pi
+
+Automatic discovery via mDNS and SSH port scan, plus manual IP/hostname entry.
+
+<p align="center">
+  <img src="docs/screenshots/discovery.png"
+       alt="Find Your Raspberry Pi — device discovery page" width="720">
+</p>
+
+### Connect to Your Raspberry Pi
+
+SSH credentials, live connection test and the automatic pre-flight system
+checks.
+
+<p align="center">
+  <img src="docs/screenshots/ssh.png"
+       alt="Connect to Your Raspberry Pi — SSH credentials and system checks"
+       width="720">
+</p>
+
+### Configure Your Installation
+
+Phoniebox source, system options, services and audio.
+
+<p align="center">
+  <img src="docs/screenshots/options.png"
+       alt="Configure Your Installation — installation options page" width="720">
+</p>
+
+### Review Your Configuration
+
+Summary of all choices, including the backup/remove decision for existing
+installations.
+
+<p align="center">
+  <img src="docs/screenshots/summary.png"
+       alt="Review Your Configuration — summary page" width="720">
+</p>
+
+### Installing Phoniebox
+
+Live log and phase progress, followed by the reboot countdown.
+
+<p align="center">
+  <img src="docs/screenshots/install.png"
+       alt="Installing Phoniebox — live log and progress page" width="720">
+</p>
+
 ## Development
 
 ```bash
@@ -67,8 +119,19 @@ uv pip install --python .venv/bin/python -r requirements-dev.txt
 ## Building
 
 - **Linux AppImage** — `packaging/linux/build_appimage.sh` (PyInstaller +
-  appimagetool). The CI workflow builds it inside a Debian 12 container so the
-  result is deterministic.
+  appimagetool). You can build it locally with:
+
+  ```bash
+  bash ./packaging/linux/build_appimage.sh
+  ```
+
+  This produces `Phoniebox-Installer-<version>-x86_64.AppImage` in the repo
+  root. Requirements: the dev dependencies (incl. `pyinstaller`, see
+  requirements-dev.txt), the system `file` utility, and `wget` — appimagetool
+  is downloaded automatically if it is not already installed. The CI workflow
+  runs the same script inside a Debian 12 container so the result is
+  deterministic and independent of the developer's system.
+
 - **Windows executable** — `packaging/windows/phoniebox-installer.spec`
   (PyInstaller, produces `dist/Phoniebox-Installer.exe`).
 
