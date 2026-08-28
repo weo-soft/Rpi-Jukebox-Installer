@@ -9,7 +9,8 @@ answers the tool's prompts in the input line; the jukebox-daemon is stopped
 before and restarted after the configuration (see READER_CONFIG_COMMAND).
 """
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Signal, QTimer
+from PySide6.QtGui import QTextCursor
 from PySide6.QtWidgets import (
     QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QPlainTextEdit, QLineEdit,
 )
@@ -17,6 +18,11 @@ from PySide6.QtWidgets import (
 from phoniebox_installer.gui.pages.base import BasePage
 from phoniebox_installer.app.events import SshEvents
 from phoniebox_installer.app.readers import MANUAL_CONFIG_READERS
+
+#: Seconds without any remote output before the page warns the user that the
+#: configuration process may be stuck (helps to distinguish a real hang from a
+#: long-running but silent command).
+NO_OUTPUT_WARNING_SECONDS = 20
 
 
 class ReaderConfigPage(BasePage):
@@ -41,6 +47,13 @@ class ReaderConfigPage(BasePage):
 
         self._output_received.connect(self._on_output_received)
         self._session_exited.connect(self._on_session_exited)
+
+        # Warns when no remote output arrives for a while (the session may be
+        # stuck). Reset by every received output chunk.
+        self._no_output_timer = QTimer(self)
+        self._no_output_timer.setSingleShot(True)
+        self._no_output_timer.setInterval(NO_OUTPUT_WARNING_SECONDS * 1000)
+        self._no_output_timer.timeout.connect(self._on_no_output)
 
     # ------------------------------------------------------------------
     # UI
@@ -134,6 +147,7 @@ class ReaderConfigPage(BasePage):
         # Never leave a session running in the background.
         if self.controller is not None:
             self.controller.stop_reader_config_session()
+        self._no_output_timer.stop()
         self._unsubscribe()
 
     def validate(self):
@@ -170,15 +184,29 @@ class ReaderConfigPage(BasePage):
         self._session_active = True
         self._set_input_enabled(True)
         self._connect_btn.setEnabled(False)
-        self.controller.start_reader_config_session(
-            on_output=self._output_received.emit,
-            on_exit=self._session_exited.emit,
-        )
+        try:
+            self.controller.start_reader_config_session(
+                on_output=self._output_received.emit,
+                on_exit=self._session_exited.emit,
+            )
+        except Exception as e:
+            # A failed session start (e.g. SSH dropped again) must be visible
+            # instead of leaving the page stuck on "Configuration running".
+            self._session_active = False
+            self._session_started = False
+            self._connect_requested = False
+            self._set_input_enabled(False)
+            self._connect_btn.setEnabled(True)
+            self._set_status(f"❌ Could not start the configuration session: {e}")
+            self._append_line(f"Error: {e}")
+            return
+        self._no_output_timer.start()
 
     def _stop_session(self):
         if self.controller is not None:
             self.controller.stop_reader_config_session()
         self._session_active = False
+        self._no_output_timer.stop()
         self._set_input_enabled(False)
         self._set_status("Session stopped.")
         self._connect_btn.setEnabled(True)
@@ -188,6 +216,7 @@ class ReaderConfigPage(BasePage):
             self.controller.stop_reader_config_session()
         self._session_active = False
         self._skipped = True
+        self._no_output_timer.stop()
         self._set_input_enabled(False)
         self._set_status("Configuration skipped. You can run it later on the Pi with "
                          "'run_register_rfid_reader.py'.")
@@ -238,13 +267,32 @@ class ReaderConfigPage(BasePage):
     # ------------------------------------------------------------------
 
     def _on_output_received(self, text: str):
-        self._terminal.moveCursor(self._terminal.textCursor().End)
+        # Move to the end with the correct PySide6 enum (QTextCursor.End does
+        # not exist on the instance) — otherwise the slot throws inside the Qt
+        # event loop and the remote output is never displayed.
+        self._terminal.moveCursor(QTextCursor.MoveOperation.End)
         self._terminal.insertPlainText(text)
-        self._terminal.moveCursor(self._terminal.textCursor().End)
+        self._terminal.moveCursor(QTextCursor.MoveOperation.End)
+        # Any output means the remote process is alive — restart the no-output
+        # watchdog.
+        if self._session_active:
+            self._no_output_timer.start()
+
+    def _on_no_output(self):
+        """Show a warning when no remote output arrived for a while."""
+        if not self._session_active:
+            return
+        self._set_status(
+            "⚠️ No output received from the Raspberry Pi for a while — the "
+            "configuration process may be stuck. Check the connection or stop "
+            "the session (⏹ Stop Session) and retry."
+        )
+        self._append_line("(No output received — the remote process may be stuck.)")
 
     def _on_session_exited(self, exit_code: int):
         self._session_active = False
         self._session_done = True
+        self._no_output_timer.stop()
         self._set_input_enabled(False)
         self._connect_btn.setEnabled(False)
         if exit_code == 0:

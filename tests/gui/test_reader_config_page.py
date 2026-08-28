@@ -104,3 +104,77 @@ def test_ssh_error_reenables_connect(qapp):
     bus.publish(SshEvents.AUTH_FAILED, {"host": "x", "reason": "bad password"})
     assert page._connect_btn.isEnabled() is True
     assert "bad password" in page._status_label.text()
+
+
+def test_start_session_failure_is_visible(qapp):
+    """A failing session start must be shown instead of hanging silently."""
+
+    class _FailingController(_FakeController):
+        def start_reader_config_session(self, on_output=None, on_exit=None):
+            raise RuntimeError("a session is already active")
+
+    page, _state, bus, _ctrl = _make_page(controller=_FailingController())
+    page.on_enter()
+    bus.publish(SshEvents.CONNECTED, {"host": "phoniebox.local"})
+
+    assert "a session is already active" in page._status_label.text()
+    assert page._connect_btn.isEnabled() is True
+    assert page._session_active is False
+
+
+def test_output_received_updates_terminal(qapp):
+    """Signals from the SSH thread are shown in the terminal widget."""
+    page, _state, bus, ctrl = _make_page()
+    page.on_enter()
+    bus.publish(SshEvents.CONNECTED, {"host": "phoniebox.local"})
+
+    page._output_received.emit("[reader-config] Stopping jukebox-daemon...")
+    assert "[reader-config] Stopping jukebox-daemon..." in page._terminal.toPlainText()
+
+
+def test_no_output_warning_shows_message(qapp):
+    """The no-output watchdog reports a possibly stuck session."""
+    page, _state, bus, _ctrl = _make_page()
+    page.on_enter()
+    bus.publish(SshEvents.CONNECTED, {"host": "phoniebox.local"})
+
+    page._on_no_output()
+    assert "No output received" in page._status_label.text()
+    assert "may be stuck" in page._terminal.toPlainText()
+
+
+def test_no_output_timer_stops_after_session_exit(qapp):
+    """The watchdog is stopped once the session ends."""
+    page, _state, bus, _ctrl = _make_page()
+    page.on_enter()
+    bus.publish(SshEvents.CONNECTED, {"host": "phoniebox.local"})
+    assert page._no_output_timer.isActive() is True
+
+    page._on_session_exited(0)
+    assert page._no_output_timer.isActive() is False
+
+
+def test_output_from_ssh_thread_reaches_terminal(qapp):
+    """Output emitted from a non-GUI thread is displayed (queued signal)."""
+    import threading
+    import time
+    from PySide6.QtCore import QCoreApplication
+
+    page, _state, bus, _ctrl = _make_page()
+    page.on_enter()
+    bus.publish(SshEvents.CONNECTED, {"host": "phoniebox.local"})
+
+    def _emit():
+        time.sleep(0.05)
+        page._output_received.emit("[reader-config] Starting tool...\n")
+
+    threading.Thread(target=_emit, daemon=True).start()
+
+    deadline = time.monotonic() + 3.0
+    while time.monotonic() < deadline:
+        QCoreApplication.processEvents()
+        if "[reader-config] Starting tool..." in page._terminal.toPlainText():
+            break
+        time.sleep(0.02)
+
+    assert "[reader-config] Starting tool..." in page._terminal.toPlainText()
