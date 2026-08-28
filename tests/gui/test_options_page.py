@@ -84,24 +84,41 @@ def test_rfid_module_required_when_enabled(qapp):
     assert valid is True
 
 
-def test_rfid_manual_reader_blocked_in_validation(qapp):
-    """Readers without module defaults (e.g. generic_usb) are blocked remotely."""
+def test_rfid_manual_reader_allows_continue(qapp):
+    """Readers without module defaults (e.g. generic_usb) pass validation.
+
+    They are configured in an additional wizard step after installation and
+    reboot, so selecting them must not block the wizard.
+    """
     page = _make_page()
     idx = page._rfid_reader_combo.findData("generic_usb")
     page._rfid_reader_combo.setCurrentIndex(idx)
     valid, msg = page.validate()
-    assert valid is False
-    assert "run_register_rfid_reader.py" in msg
+    assert valid is True
+    assert msg == ""
 
-    # A reader with module defaults (pn532_i2c_py532) passes validation
+    # A reader with module defaults (pn532_i2c_py532) passes validation too
     idx = page._rfid_reader_combo.findData("pn532_i2c_py532")
     page._rfid_reader_combo.setCurrentIndex(idx)
     valid, _ = page.validate()
     assert valid is True
 
 
+def test_rfid_manual_reader_hint_points_to_additional_step(qapp):
+    """The hint for manual readers references the additional wizard step."""
+    page = _make_page()
+    idx = page._rfid_reader_combo.findData("generic_usb")
+    page._rfid_reader_combo.setCurrentIndex(idx)
+
+    text = page._rfid_manual_hint.text()
+    assert "additional step" in text
+    # The user is not told to configure manually anymore.
+    assert "manually" not in text.lower()
+    assert "run_register_rfid_reader.py" not in text
+
+
 def test_rfid_manual_reader_shows_hint(qapp):
-    """Selecting a manual-only reader reveals the on-Pi configuration hint."""
+    """Selecting a manual-only reader reveals the configuration hint."""
     page = _make_page()
     assert page._rfid_manual_hint.isHidden() is True
 

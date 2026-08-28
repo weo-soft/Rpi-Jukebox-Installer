@@ -350,10 +350,9 @@ class OptionsPage(BasePage):
         self._rfid_hint.setStyleSheet("color: #b04a00; font-size: 11px;")
         rfid_frame_layout.addWidget(self._rfid_hint)
         self._rfid_manual_hint = QLabel(
-            "ℹ️  This reader cannot be configured by the remote installer: it has no "
-            "automatic defaults and requires interactive device/pin selection on the "
-            "Raspberry Pi. Disable the RFID reader for now, install, and afterwards run "
-            "'run_register_rfid_reader.py' in ~/RPi-Jukebox-RFID/src/jukebox on the Pi."
+            "ℹ️  This reader has no automatic defaults. After the installation and "
+            "the reboot, the installer will open an additional step that configures "
+            "the reader interactively on the Raspberry Pi."
         )
         self._rfid_manual_hint.setWordWrap(True)
         self._rfid_manual_hint.setStyleSheet("color: #8a6d00; font-size: 11px;")
@@ -757,14 +756,9 @@ class OptionsPage(BasePage):
         if self._rfid_checkbox.isChecked() and not self._rfid_reader_combo.currentData():
             return (False, "RFID reader is enabled — please select a reader type "
                            "or disable the RFID reader.")
-        if (self._rfid_checkbox.isChecked()
-                and self._rfid_reader_combo.currentData() in RFID_MANUAL_READERS):
-            return (False, "The selected reader requires interactive configuration on "
-                           "the Raspberry Pi and cannot be set up by the remote installer. "
-                           "Choose a reader with automatic defaults, disable the RFID "
-                           "reader for now, or configure it manually on the Pi afterwards "
-                           "with 'run_register_rfid_reader.py' (from ~/RPi-Jukebox-RFID/"
-                           "src/jukebox).")
+        # Readers without module defaults are not a validation error: the wizard
+        # runs the interactive configuration as an additional step after the
+        # installation and reboot (see ReaderConfigPage).
         if self._spotify_checkbox.isChecked() and not self._spotify_client_id_input.text().strip():
             return (False, "Spotify is enabled — please enter the Spotify developer app "
                            "client ID.")
