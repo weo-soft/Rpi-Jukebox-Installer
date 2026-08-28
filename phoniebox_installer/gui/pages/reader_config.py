@@ -1,5 +1,4 @@
-"""
-Reader configuration page — interactive configuration of manually
+"""Reader configuration page — interactive configuration of manually
 configured readers (generic_usb, generic_nfcpy, rc522_spi) after install.
 
 After the installation and the reboot the page establishes a fresh SSH
@@ -8,6 +7,8 @@ pseudo-terminal and streams the output into a terminal-like widget. The user
 answers the tool's prompts in the input line; the jukebox-daemon is stopped
 before and restarted after the configuration (see READER_CONFIG_COMMAND).
 """
+
+import re
 
 from PySide6.QtCore import Signal, QTimer
 from PySide6.QtGui import QTextCursor
@@ -23,6 +24,37 @@ from phoniebox_installer.app.readers import MANUAL_CONFIG_READERS
 #: configuration process may be stuck (helps to distinguish a real hang from a
 #: long-running but silent command).
 NO_OUTPUT_WARNING_SECONDS = 20
+
+#: Complete ANSI escape sequences: CSI (colors/cursor), OSC (e.g. title) and
+#: single-character escapes. The terminal widget cannot render them, so they
+#: are stripped before display. Note: the single-char class must exclude '[' and
+#: ']' — those introduce CSI/OSC sequences and must not be consumed separately,
+#: otherwise an incomplete CSI tail (e.g. ESC[96) would be mangled.
+_ANSI_ESCAPE_RE = re.compile(
+    r"\x1b\[[0-9;?]*[ -/]*[@-~]"          # CSI: ESC [ params ... final byte
+    r"|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"  # OSC: ESC ] ... BEL or ESC backslash
+    r"|\x1b[^\[\]]"                        # single-char escapes (not CSI/OSC starts)
+)
+
+
+def strip_ansi(text: str, pending: str = "") -> tuple:
+    """Remove ANSI escape sequences from ``text``.
+
+    A chunk boundary may cut an escape sequence in half (e.g. ``ESC[9`` at the
+    end of one chunk and ``2m`` at the start of the next). ``pending`` carries
+    such an incomplete tail from the previous chunk.
+
+    :param text: New raw output chunk
+    :param pending: Incomplete escape tail from the previous chunk
+    :return: ``(clean_text, pending)`` for the next call
+    """
+    combined = pending + text
+    clean = _ANSI_ESCAPE_RE.sub("", combined)
+    idx = clean.rfind("\x1b")
+    if idx != -1:
+        # After substitution only incomplete escapes remain → keep the tail.
+        return clean[:idx], clean[idx:]
+    return clean, ""
 
 
 class ReaderConfigPage(BasePage):
@@ -42,6 +74,7 @@ class ReaderConfigPage(BasePage):
         self._session_done = False
         self._skipped = False
         self._connect_requested = False
+        self._ansi_pending = ""
 
         self._setup_ui()
 
@@ -126,6 +159,7 @@ class ReaderConfigPage(BasePage):
 
     def on_enter(self):
         self._terminal.clear()
+        self._ansi_pending = ""
         self._session_active = False
         self._session_started = False
         self._session_done = False
@@ -267,11 +301,15 @@ class ReaderConfigPage(BasePage):
     # ------------------------------------------------------------------
 
     def _on_output_received(self, text: str):
+        clean, self._ansi_pending = strip_ansi(text, self._ansi_pending)
+        if not clean:
+            # Only ANSI codes / an incomplete escape tail — nothing to show yet.
+            return
         # Move to the end with the correct PySide6 enum (QTextCursor.End does
         # not exist on the instance) — otherwise the slot throws inside the Qt
         # event loop and the remote output is never displayed.
         self._terminal.moveCursor(QTextCursor.MoveOperation.End)
-        self._terminal.insertPlainText(text)
+        self._terminal.insertPlainText(clean)
         self._terminal.moveCursor(QTextCursor.MoveOperation.End)
         # Any output means the remote process is alive — restart the no-output
         # watchdog.

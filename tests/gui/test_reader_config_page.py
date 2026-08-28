@@ -3,7 +3,7 @@
 from phoniebox_installer.app.event_bus import EventBus
 from phoniebox_installer.app.events import SshEvents
 from phoniebox_installer.app.state import InstallerState
-from phoniebox_installer.gui.pages.reader_config import ReaderConfigPage
+from phoniebox_installer.gui.pages.reader_config import ReaderConfigPage, strip_ansi
 
 
 class _FakeController:
@@ -178,3 +178,34 @@ def test_output_from_ssh_thread_reaches_terminal(qapp):
         time.sleep(0.02)
 
     assert "[reader-config] Starting tool..." in page._terminal.toPlainText()
+
+
+def test_strip_ansi_removes_color_codes():
+    """ANSI color codes are removed from the displayed text."""
+    raw = " \x1b[92m 0\x1b[0m: \x1b[96m\x1b[01mNo RFID Reader\x1b[0m\n"
+    clean, pending = strip_ansi(raw)
+    assert clean == "  0: No RFID Reader\n"
+    assert pending == ""
+
+
+def test_strip_ansi_buffers_incomplete_escape():
+    """An escape sequence split across chunks is combined correctly."""
+    clean1, pending = strip_ansi(" 1: \x1b[96")
+    assert clean1 == " 1: "
+    assert pending == "\x1b[96"
+
+    clean2, pending = strip_ansi("m\x1b[01mGeneric USB Reader\x1b[0m", pending)
+    assert clean2 == "Generic USB Reader"
+    assert pending == ""
+
+
+def test_output_received_strips_ansi(qapp):
+    """ANSI codes never reach the terminal widget."""
+    page, _state, bus, _ctrl = _make_page()
+    page.on_enter()
+    bus.publish(SshEvents.CONNECTED, {"host": "phoniebox.local"})
+
+    page._output_received.emit("\x1b[92mReader module number? [0..7]\x1b[0m ")
+    text = page._terminal.toPlainText()
+    assert "\x1b" not in text
+    assert "Reader module number? [0..7]" in text
