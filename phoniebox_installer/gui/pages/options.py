@@ -27,6 +27,12 @@ RFID_READERS = [
     ("generic_usb", "Generic USB Reader"),
 ]
 
+#: Readers that have no usable module defaults and require interactive
+#: device/pin selection on the Raspberry Pi itself (run_register_rfid_reader.py).
+#: They cannot be configured by this remote/headless installer, so selecting
+#: them is blocked in validate() with a hint on how to proceed.
+RFID_MANUAL_READERS = frozenset({"generic_usb", "generic_nfcpy", "rc522_spi"})
+
 HIFIBERRY_BOARDS = [
     "hifiberry-dacplus",
     "hifiberry-digi",
@@ -342,6 +348,16 @@ class OptionsPage(BasePage):
         self._rfid_hint = QLabel("⚠️  Required — choose your RFID reader type.")
         self._rfid_hint.setStyleSheet("color: #b04a00; font-size: 11px;")
         rfid_frame_layout.addWidget(self._rfid_hint)
+        self._rfid_manual_hint = QLabel(
+            "ℹ️  This reader cannot be configured by the remote installer: it has no "
+            "automatic defaults and requires interactive device/pin selection on the "
+            "Raspberry Pi. Disable the RFID reader for now, install, and afterwards run "
+            "'run_register_rfid_reader.py' in ~/RPi-Jukebox-RFID/src/jukebox on the Pi."
+        )
+        self._rfid_manual_hint.setWordWrap(True)
+        self._rfid_manual_hint.setStyleSheet("color: #8a6d00; font-size: 11px;")
+        self._rfid_manual_hint.setVisible(False)
+        rfid_frame_layout.addWidget(self._rfid_manual_hint)
         services_layout.addWidget(rfid_frame)
 
         self._samba_checkbox = self._add_checkbox(
@@ -510,6 +526,15 @@ class OptionsPage(BasePage):
         self._rfid_reader_combo.style().unpolish(self._rfid_reader_combo)
         self._rfid_reader_combo.style().polish(self._rfid_reader_combo)
         self._rfid_hint.setVisible(needed)
+        self._update_rfid_manual_hint()
+
+    def _update_rfid_manual_hint(self, *_args):
+        """Show a hint when a reader requiring on-Pi configuration is selected."""
+        needs_manual = (
+            self._rfid_checkbox.isChecked()
+            and self._rfid_reader_combo.currentData() in RFID_MANUAL_READERS
+        )
+        self._rfid_manual_hint.setVisible(needs_manual)
 
     def _make_info_icon(self, key):
         """Return an InfoIcon for the given OPTION_INFO key."""
@@ -537,6 +562,7 @@ class OptionsPage(BasePage):
         )
         self._rfid_checkbox.toggled.connect(self._update_rfid_highlight)
         self._rfid_reader_combo.currentIndexChanged.connect(self._update_rfid_highlight)
+        self._rfid_reader_combo.currentIndexChanged.connect(self._update_rfid_manual_hint)
         self._webapp_checkbox.toggled.connect(self._on_webapp_toggled)
         self._autohotspot_checkbox.toggled.connect(self._on_autohotspot_toggled)
         # A non-upstream source requires the development WebApp bundle.
@@ -661,6 +687,7 @@ class OptionsPage(BasePage):
         self._webapp_checkbox.setChecked(self.state.enable_webapp)
         self._kiosk_checkbox.setChecked(self.state.enable_kiosk_mode)
         self._set_combo_data(self._rfid_reader_combo, self.state.rfid_reader_module)
+        self._update_rfid_manual_hint()
         self._set_combo_data(self._hifiberry_combo, self.state.audio_hifiberry_board)
         self._set_combo_data(self._webapp_bundle_combo, self.state.enable_webapp_prod_download)
         # The source rule wins over the stored value: a non-upstream source
@@ -729,6 +756,14 @@ class OptionsPage(BasePage):
         if self._rfid_checkbox.isChecked() and not self._rfid_reader_combo.currentData():
             return (False, "RFID reader is enabled — please select a reader type "
                            "or disable the RFID reader.")
+        if (self._rfid_checkbox.isChecked()
+                and self._rfid_reader_combo.currentData() in RFID_MANUAL_READERS):
+            return (False, "The selected reader requires interactive configuration on "
+                           "the Raspberry Pi and cannot be set up by the remote installer. "
+                           "Choose a reader with automatic defaults, disable the RFID "
+                           "reader for now, or configure it manually on the Pi afterwards "
+                           "with 'run_register_rfid_reader.py' (from ~/RPi-Jukebox-RFID/"
+                           "src/jukebox).")
         if self._spotify_checkbox.isChecked() and not self._spotify_client_id_input.text().strip():
             return (False, "Spotify is enabled — please enter the Spotify developer app "
                            "client ID.")

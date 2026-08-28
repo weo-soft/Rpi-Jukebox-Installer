@@ -84,6 +84,44 @@ def test_rfid_module_required_when_enabled(qapp):
     assert valid is True
 
 
+def test_rfid_manual_reader_blocked_in_validation(qapp):
+    """Readers without module defaults (e.g. generic_usb) are blocked remotely."""
+    page = _make_page()
+    idx = page._rfid_reader_combo.findData("generic_usb")
+    page._rfid_reader_combo.setCurrentIndex(idx)
+    valid, msg = page.validate()
+    assert valid is False
+    assert "run_register_rfid_reader.py" in msg
+
+    # A reader with module defaults (pn532_i2c_py532) passes validation
+    idx = page._rfid_reader_combo.findData("pn532_i2c_py532")
+    page._rfid_reader_combo.setCurrentIndex(idx)
+    valid, _ = page.validate()
+    assert valid is True
+
+
+def test_rfid_manual_reader_shows_hint(qapp):
+    """Selecting a manual-only reader reveals the on-Pi configuration hint."""
+    page = _make_page()
+    assert page._rfid_manual_hint.isHidden() is True
+
+    idx = page._rfid_reader_combo.findData("generic_usb")
+    page._rfid_reader_combo.setCurrentIndex(idx)
+    assert page._rfid_manual_hint.isHidden() is False
+
+    idx = page._rfid_reader_combo.findData("pn532_i2c_py532")
+    page._rfid_reader_combo.setCurrentIndex(idx)
+    assert page._rfid_manual_hint.isHidden() is True
+
+    # Disabling RFID also hides the hint
+    page._rfid_reader_combo.setCurrentIndex(
+        page._rfid_reader_combo.findData("generic_usb")
+    )
+    assert page._rfid_manual_hint.isHidden() is False
+    page._rfid_checkbox.setChecked(False)
+    assert page._rfid_manual_hint.isHidden() is True
+
+
 def test_plugin_default_values(qapp):
     """Plugin defaults match InstallerState defaults."""
     page = _make_page()
