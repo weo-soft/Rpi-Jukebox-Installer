@@ -269,6 +269,13 @@ class SshConnectionManager:
                 if channel.closed:
                     break
                 time.sleep(0.05)
+            # Drain output that arrived after the last recv_ready() check but
+            # before the process exit — otherwise an error message printed right
+            # before a quick exit (e.g. "ERROR: venv not found") would be lost.
+            while channel.recv_ready():
+                data = channel.recv(4096)
+                if data and on_output is not None:
+                    on_output(data.decode("utf-8", errors="replace"))
             exit_status = channel.recv_exit_status()
         except Exception as e:
             logger.error(f"Interactive session error: {e}")

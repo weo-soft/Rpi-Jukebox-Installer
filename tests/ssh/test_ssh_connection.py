@@ -68,6 +68,27 @@ class _FakeChannel:
         self.closed = True
 
 
+class _FakeChannelDelayedOutput(_FakeChannel):
+    """Simulates a fast-failing remote command whose error output only becomes
+    visible after the exit status is ready.
+
+    The first ``recv_ready()`` poll (in the loop) returns False while
+    ``exit_status_ready()`` is already True; the buffered output only shows up
+    on later polls (i.e. the drain after the loop).
+    """
+
+    def __init__(self, exit_status=1, lines=None):
+        super().__init__(exit_status=exit_status, lines=lines or [])
+        self._recv_calls = 0
+
+    def recv_ready(self):
+        self._recv_calls += 1
+        return self._recv_calls > 1 and bool(self._lines)
+
+    def exit_status_ready(self):
+        return True
+
+
 class _FakeClient:
     """Minimal fake paramiko.SSHClient."""
 
@@ -428,3 +449,25 @@ class TestSshConnection:
             assert "not connected" in str(e)
             return
         raise AssertionError("Expected RuntimeError")
+
+    def test_interactive_session_drains_output_before_exit(self, qapp, tmp_path, monkeypatch):
+        """Output printed right before a quick exit is not lost.
+
+        Regression: a fast-failing remote command (e.g. the reader-config
+        wrapper reporting a missing venv) must still show its error message.
+        """
+        channel = _FakeChannelDelayedOutput(
+            exit_status=1, lines=["ERROR: virtualenv not found"]
+        )
+        client = _FakeClient(transport=_FakeTransport(channel))
+        bus, mgr, _ = self._make_manager(tmp_path, monkeypatch, client)
+        mgr._client = client
+        mgr._connected = True
+
+        received = []
+        exits = []
+        mgr.start_interactive_session("run tool", on_output=received.append, on_exit=exits.append)
+
+        assert _pump_until(lambda: bool(exits))
+        assert received == ["ERROR: virtualenv not found\n"]
+        assert exits == [1]

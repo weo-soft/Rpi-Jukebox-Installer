@@ -146,7 +146,13 @@ class TestInstallerController:
 
         controller.start_reader_config_session(on_output=out, on_exit=exit_cb)
         assert len(seen) == 1
-        assert "run_register_rfid_reader.py" in seen[0][0]
+        command = seen[0][0]
+        assert "run_register_rfid_reader.py" in command
+        # The virtualenv lives at the repo root (installation/includes/
+        # 00_constants.sh: VIRTUAL_ENV="${INSTALLATION_PATH}/.venv").
+        assert "cd ~/RPi-Jukebox-RFID" in command
+        assert ".venv/bin/activate" in command
+        assert "cd src/jukebox" in command
         assert seen[0][1] is out
         assert seen[0][2] is exit_cb
 
