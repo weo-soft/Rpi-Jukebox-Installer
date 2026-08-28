@@ -153,6 +153,10 @@ class TestInstallerController:
         assert "cd ~/RPi-Jukebox-RFID" in command
         assert ".venv/bin/activate" in command
         assert "cd src/jukebox" in command
+        # The daemon stop is guarded by a timeout and diagnostic output is
+        # emitted so a hang becomes visible in the terminal.
+        assert "timeout 20 systemctl --user stop" in command
+        assert "[reader-config]" in command
         assert seen[0][1] is out
         assert seen[0][2] is exit_cb
 
