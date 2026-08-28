@@ -132,6 +132,7 @@ class MainWindow(QMainWindow):
         from phoniebox_installer.gui.pages.options import OptionsPage
         from phoniebox_installer.gui.pages.summary import SummaryPage
         from phoniebox_installer.gui.pages.install import InstallPage
+        from phoniebox_installer.gui.pages.reader_config import ReaderConfigPage
 
         page_classes = [
             WelcomePage,
@@ -140,6 +141,7 @@ class MainWindow(QMainWindow):
             OptionsPage,
             SummaryPage,
             InstallPage,
+            ReaderConfigPage,
         ]
 
         self.wizard = Wizard(

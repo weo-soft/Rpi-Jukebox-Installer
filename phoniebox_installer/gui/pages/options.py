@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QRadioButton, QButtonGroup,
 )
 
+from phoniebox_installer.app.readers import MANUAL_CONFIG_READERS
 from phoniebox_installer.gui.pages.base import BasePage
 from phoniebox_installer.gui.widgets import (
     CollapsibleGroupBox, CustomCheckBox, InfoIcon,
@@ -31,7 +32,7 @@ RFID_READERS = [
 #: device/pin selection on the Raspberry Pi itself (run_register_rfid_reader.py).
 #: They cannot be configured by this remote/headless installer, so selecting
 #: them is blocked in validate() with a hint on how to proceed.
-RFID_MANUAL_READERS = frozenset({"generic_usb", "generic_nfcpy", "rc522_spi"})
+RFID_MANUAL_READERS = MANUAL_CONFIG_READERS
 
 HIFIBERRY_BOARDS = [
     "hifiberry-dacplus",

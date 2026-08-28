@@ -68,6 +68,20 @@ class BasePage(QWidget):
         """
         return (True, "")
 
+    @staticmethod
+    def relevant(state) -> bool:
+        """
+        Whether this page participates in the current wizard flow.
+
+        The wizard skips pages that report ``False`` when navigating. The
+        default is to always include a page; conditional pages (e.g. the
+        post-install reader configuration) override this based on ``state``.
+
+        :param state: The shared InstallerState
+        :return: True to include the page, False to skip it
+        """
+        return True
+
     def on_leave(self):
         """
         Called when leaving this page (either Next or Back).

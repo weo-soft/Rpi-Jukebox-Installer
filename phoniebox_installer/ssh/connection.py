@@ -196,6 +196,93 @@ class SshConnectionManager:
                 self._active_channel = None
             channel.close()
 
+    def start_interactive_session(self, command: str,
+                                  on_output: Optional[Callable[[str], None]] = None,
+                                  on_exit: Optional[Callable[[int], None]] = None):
+        """
+        Start an interactive command over a pseudo-terminal in a background thread.
+
+        The channel is opened with ``get_pty()`` so that interactive tools
+        reading from stdin (e.g. ``run_register_rfid_reader.py``) work over the
+        remote connection. Raw output is delivered to ``on_output`` (called from
+        the session thread), and the final exit status to ``on_exit``.
+
+        :param command: Shell command to execute on the target
+        :param on_output: Optional callback receiving raw output chunks (str)
+        :param on_exit: Optional callback receiving the exit status (int)
+        :raises RuntimeError: when not connected or a session is already active
+        """
+        if not self.is_connected:
+            raise RuntimeError("start_interactive_session: SSH not connected")
+        transport = self._client.get_transport()
+        if transport is None or not transport.is_active():
+            raise RuntimeError("start_interactive_session: SSH transport not active")
+        if self._active_channel is not None:
+            raise RuntimeError("start_interactive_session: a session is already active")
+
+        channel = transport.open_session()
+        channel.get_pty()
+        channel.settimeout(1.0)
+        self._active_channel = channel
+
+        threading.Thread(
+            target=self._interactive_session_loop,
+            args=(channel, command, on_output, on_exit),
+            daemon=True,
+            name="ssh-interactive",
+        ).start()
+
+    def send_input(self, data: str):
+        """
+        Send raw user input to the active interactive session.
+
+        :param data: Text to send (e.g. a line including the trailing newline)
+        :raises RuntimeError: when no interactive session is active
+        """
+        channel = self._active_channel
+        if channel is None or channel.closed:
+            raise RuntimeError("send_input: no active interactive session")
+        channel.send(data.encode("utf-8"))
+
+    def stop_interactive_session(self):
+        """Close the active interactive session (the remote process is killed)."""
+        channel = self._active_channel
+        if channel is not None:
+            try:
+                channel.close()
+            except Exception:
+                pass
+            self._active_channel = None
+
+    def _interactive_session_loop(self, channel, command, on_output, on_exit):
+        """Run the interactive channel: stream output and report the exit code."""
+        exit_status = -1
+        try:
+            channel.exec_command(command)
+            while True:
+                if channel.recv_ready():
+                    data = channel.recv(4096)
+                    if data and on_output is not None:
+                        on_output(data.decode("utf-8", errors="replace"))
+                if channel.exit_status_ready():
+                    break
+                if channel.closed:
+                    break
+                time.sleep(0.05)
+            exit_status = channel.recv_exit_status()
+        except Exception as e:
+            logger.error(f"Interactive session error: {e}")
+            exit_status = -1
+        finally:
+            try:
+                channel.close()
+            except Exception:
+                pass
+            if self._active_channel is channel:
+                self._active_channel = None
+            if on_exit is not None:
+                on_exit(exit_status)
+
     def cancel_current(self):
         """
         Interrupt the running exec_command() (used by M12 Cancel, Q2).

@@ -10,7 +10,7 @@ the installation, and executes the Phoniebox install scripts non-interactively
 
 ## What it does
 
-The installer walks you through a six-step wizard:
+The installer walks you through a seven-step wizard:
 
 1. **Welcome** — choose the installation mode. A fresh installation is fully
    supported; updating an existing Phoniebox is shown as "coming soon".
@@ -49,6 +49,12 @@ The installer walks you through a six-step wizard:
    and progress is shown per phase. After success a 30-second countdown reboots
    the Pi (or "Restart Now" / "Cancel Restart"); the installer waits for the Pi
    to come back online and then offers to open the Phoniebox web interface.
+7. **RFID reader configuration** *(only when a reader without automatic module
+   defaults was selected, e.g. `generic_usb`, `generic_nfcpy` or `rc522_spi`)* —
+   after the reboot the installer establishes a fresh SSH connection and runs
+   the official `run_register_rfid_reader.py` tool interactively in a
+   terminal-like view. The user is guided through device/pin selection; the
+   jukebox-daemon is stopped for the configuration and restarted afterwards.
 
 ## Screenshots
 

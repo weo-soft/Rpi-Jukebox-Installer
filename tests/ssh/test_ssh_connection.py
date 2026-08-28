@@ -35,6 +35,9 @@ class _FakeChannel:
     def settimeout(self, t):
         pass
 
+    def get_pty(self):
+        pass
+
     def exec_command(self, cmd):
         pass
 
@@ -378,3 +381,50 @@ class TestSshConnection:
         assert connected[0]["host"] == host
         assert disk[host] is server_key
         mgr.disconnect()
+
+    def test_start_interactive_session_streams_output(self, qapp, tmp_path, monkeypatch):
+        """start_interactive_session streams output and reports the exit status."""
+        channel = _FakeChannel(exit_status=0, lines=["line1", "line2"])
+        client = _FakeClient(transport=_FakeTransport(channel))
+        bus, mgr, _ = self._make_manager(tmp_path, monkeypatch, client)
+        mgr._client = client
+        mgr._connected = True
+
+        received = []
+        exits = []
+        mgr.start_interactive_session(
+            "python run_register_rfid_reader.py",
+            on_output=received.append,
+            on_exit=exits.append,
+        )
+
+        assert _pump_until(lambda: bool(exits))
+        assert received == ["line1\n", "line2\n"]
+        assert exits == [0]
+        assert mgr._active_channel is None
+
+    def test_send_input_and_stop_interactive_session(self, qapp, tmp_path, monkeypatch):
+        """send_input forwards bytes; stop_interactive_session closes the channel."""
+        channel = _FakeChannel()
+        client = _FakeClient(transport=_FakeTransport(channel))
+        bus, mgr, _ = self._make_manager(tmp_path, monkeypatch, client)
+        mgr._client = client
+        mgr._connected = True
+        mgr._active_channel = channel
+
+        mgr.send_input("y\n")
+        assert channel._sent == [b"y\n"]
+
+        mgr.stop_interactive_session()
+        assert channel.closed is True
+        assert mgr._active_channel is None
+
+    def test_start_interactive_session_requires_connection(self, qapp, tmp_path, monkeypatch):
+        """start_interactive_session raises without an active connection."""
+        bus, mgr, _ = self._make_manager(tmp_path, monkeypatch)
+        try:
+            mgr.start_interactive_session("echo hi")
+        except RuntimeError as e:
+            assert "not connected" in str(e)
+            return
+        raise AssertionError("Expected RuntimeError")

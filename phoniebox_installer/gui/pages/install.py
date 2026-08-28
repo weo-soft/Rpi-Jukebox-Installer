@@ -314,10 +314,17 @@ class InstallPage(BasePage):
                 self._countdown_label.setStyleSheet(
                     "font-size: 20px; font-weight: bold; color: #2a7d2a;"
                 )
-                self._countdown_label.setText(
-                    "✅ Restart complete — the Raspberry Pi is back online. "
-                    "You can now close the installer."
-                )
+                if (self.controller is not None
+                        and getattr(self.controller, "needs_reader_config", lambda: False)()):
+                    self._countdown_label.setText(
+                        "✅ Restart complete — the Raspberry Pi is back online. "
+                        "Continue with the RFID reader configuration in the next step."
+                    )
+                else:
+                    self._countdown_label.setText(
+                        "✅ Restart complete — the Raspberry Pi is back online. "
+                        "You can now close the installer."
+                    )
                 self._webapp_btn.setEnabled(True)
                 self._webapp_btn.setText("🌐 Open Web Interface")
             # else: still up from before the reboot took effect — keep polling.

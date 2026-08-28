@@ -17,6 +17,7 @@ from typing import Optional
 from phoniebox_installer.app.event_bus import EventBus
 from phoniebox_installer.app.events import AppEvents
 from phoniebox_installer.app.state import InstallerState
+from phoniebox_installer.app.readers import MANUAL_CONFIG_READERS
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +158,69 @@ class InstallerController:
             logger.error("SSH manager not injected — cannot run system check")
             return
         SystemCheckRunner(self._ssh_manager, self.event_bus).run()
+
+    # ------------------------------------------------------------------
+    # Post-install RFID reader configuration (ReaderConfigPage)
+    # ------------------------------------------------------------------
+
+    def needs_reader_config(self) -> bool:
+        """Whether the post-install interactive reader configuration is required.
+
+        True when the user selected a reader that has no automatic module
+        defaults (see ``MANUAL_CONFIG_READERS``) and the installation ran.
+        """
+        return bool(
+            self.state.enable_rfid_reader
+            and self.state.rfid_reader_module in MANUAL_CONFIG_READERS
+        )
+
+    def reconnect_ssh(self):
+        """Re-establish the SSH connection after the reboot (best-effort, async).
+
+        Uses the credentials stored in the state. The previous connection is
+        closed first (it died with the reboot). Results are published via the
+        SshEvents (CONNECTED / AUTH_FAILED / ERROR / HOST_KEY_*).
+        """
+        if self._ssh_manager is None:
+            logger.error("SSH manager not injected — cannot reconnect")
+            return
+        self._ssh_manager.disconnect()
+        self._ssh_manager.connect(
+            host=self.state.target_host,
+            port=self.state.ssh_port,
+            user=self.state.ssh_user,
+            password=self.state.ssh_password,
+            key_filename=self.state.ssh_key_file,
+        )
+
+    def start_reader_config_session(self, on_output=None, on_exit=None):
+        """Start the interactive reader configuration tool over an SSH PTY.
+
+        Runs ``run_register_rfid_reader.py`` on the target Pi (stopping the
+        jukebox-daemon first and restarting it afterwards). Raw output is
+        delivered to ``on_output``, the final exit status to ``on_exit``.
+
+        :raises RuntimeError: when SSH is not connected or a session is active
+        """
+        from phoniebox_installer.app.readers import READER_CONFIG_COMMAND
+        if self._ssh_manager is None:
+            raise RuntimeError("SSH manager not injected")
+        self._ssh_manager.start_interactive_session(
+            READER_CONFIG_COMMAND,
+            on_output=on_output,
+            on_exit=on_exit,
+        )
+
+    def send_reader_config_input(self, data: str):
+        """Send a line of user input to the active reader configuration session."""
+        if self._ssh_manager is None:
+            raise RuntimeError("SSH manager not injected")
+        self._ssh_manager.send_input(data)
+
+    def stop_reader_config_session(self):
+        """Close the active reader configuration session (if any)."""
+        if self._ssh_manager is not None:
+            self._ssh_manager.stop_interactive_session()
 
     # ------------------------------------------------------------------
     # Internal Event Handlers

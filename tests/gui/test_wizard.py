@@ -168,3 +168,62 @@ class TestWizard:
         assert received[0]["index"] == 0
         assert received[0]["page_id"] == "a"
         assert received[0]["is_last"] is False
+
+    # ------------------------------------------------------------------
+    # Relevant-page skipping
+    # ------------------------------------------------------------------
+
+    def test_next_skips_non_relevant_pages(self, qapp):
+        """Next jumps over pages that report relevant() == False."""
+
+        class _Hidden(BasePage):
+            page_id = "hidden"
+            title = "Hidden"
+
+            @staticmethod
+            def relevant(state):
+                return False
+
+        wizard = _make_wizard(page_classes=[_PageA, _Hidden, _PageB])
+        wizard.set_page(0)
+        wizard._on_next()
+        assert wizard._current_index == 2  # hidden page skipped
+        assert wizard.current_page().page_id == "b"
+
+    def test_back_skips_non_relevant_pages(self, qapp):
+        """Back jumps over pages that report relevant() == False."""
+
+        class _Hidden(BasePage):
+            page_id = "hidden"
+            title = "Hidden"
+
+            @staticmethod
+            def relevant(state):
+                return False
+
+        wizard = _make_wizard(page_classes=[_PageA, _Hidden, _PageB])
+        wizard.set_page(2)
+        wizard._on_back()
+        assert wizard._current_index == 0  # hidden page skipped
+
+    def test_next_finishes_when_no_relevant_page_remains(self, qapp):
+        """Next finishes the wizard when no relevant page remains."""
+        committed = []
+
+        class _Hidden(BasePage):
+            page_id = "hidden"
+            title = "Hidden"
+
+            @staticmethod
+            def relevant(state):
+                return False
+
+        class _Committing(_PageA):
+            def commit(self):
+                committed.append(self.page_id)
+
+        wizard = _make_wizard(page_classes=[_Committing, _Hidden])
+        wizard.set_page(0)
+        wizard._on_next()
+        assert wizard._finished is True
+        assert committed == ["a"]

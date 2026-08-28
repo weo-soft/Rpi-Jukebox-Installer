@@ -202,9 +202,11 @@ class Wizard(QWidget):
                 QMessageBox.warning(self, "Validation Error", error_msg)
             return
 
-        is_last = (self._current_index == len(self._pages) - 1)
-
-        if is_last:
+        # Jump to the next relevant page (skipping pages that are not part of
+        # the current flow, e.g. the reader configuration when no manual
+        # reader was selected).
+        next_index = self._next_relevant_index(self._current_index + 1)
+        if next_index == -1:
             # Commit all pages
             for p in self._pages:
                 p.commit()
@@ -216,12 +218,27 @@ class Wizard(QWidget):
             self.finished.emit()
             logger.info("Wizard finished")
         else:
-            self.set_page(self._current_index + 1)
+            self.set_page(next_index)
 
     def _on_back(self):
-        """Handle Back button click."""
-        if self._current_index > 0:
-            self.set_page(self._current_index - 1)
+        """Handle Back button click (jumping over non-relevant pages)."""
+        prev_index = self._prev_relevant_index(self._current_index - 1)
+        if prev_index >= 0:
+            self.set_page(prev_index)
+
+    def _next_relevant_index(self, index: int) -> int:
+        """Return the first page index >= ``index`` whose page is relevant, or -1."""
+        for i in range(index, len(self._pages)):
+            if self._pages[i].relevant(self._state):
+                return i
+        return -1
+
+    def _prev_relevant_index(self, index: int) -> int:
+        """Return the last page index <= ``index`` whose page is relevant, or -1."""
+        for i in range(index, -1, -1):
+            if self._pages[i].relevant(self._state):
+                return i
+        return -1
 
     def _on_cancel(self):
         """Handle Cancel button click."""
