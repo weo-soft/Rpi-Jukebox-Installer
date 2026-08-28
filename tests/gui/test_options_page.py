@@ -78,11 +78,107 @@ def test_rfid_module_required_when_enabled(qapp):
     page._rfid_reader_combo.setCurrentIndex(0)  # placeholder, empty data
     valid, msg = page.validate()
     assert valid is False
-    assert msg
-
+    assert msg  # helpful message, not empty
     page._rfid_checkbox.setChecked(False)
     valid, _ = page.validate()
     assert valid is True
+
+
+def test_plugin_default_values(qapp):
+    """Plugin defaults match InstallerState defaults."""
+    page = _make_page()
+    assert page._spotify_checkbox.isChecked() is False
+    assert page._jellyfin_checkbox.isChecked() is False
+    assert page._spotify_redirect_uri_input.text() == (
+        "http://127.0.0.1:3000/api/v1/spotify/oauth/callback"
+    )
+    assert page._spotify_device_name_input.text() == "Phoniebox"
+
+
+def test_plugin_fields_disabled_until_enabled(qapp):
+    """Spotify/Jellyfin inputs are disabled until the plugin is checked."""
+    page = _make_page()
+    assert not page._spotify_client_id_input.isEnabled()
+    assert not page._jellyfin_host_input.isEnabled()
+
+    page._spotify_checkbox.setChecked(True)
+    assert page._spotify_client_id_input.isEnabled()
+
+    page._jellyfin_checkbox.setChecked(True)
+    assert page._jellyfin_host_input.isEnabled()
+    # Default auth mode is the API key → API key input active, user login not.
+    assert page._jellyfin_api_key_input.isEnabled()
+    assert not page._jellyfin_username_input.isEnabled()
+
+
+def test_spotify_validation_requires_client_id(qapp):
+    """Spotify enabled without a client ID → validation fails."""
+    page = _make_page()
+    page._rfid_checkbox.setChecked(False)  # satisfy the RFID requirement
+    page._spotify_checkbox.setChecked(True)
+    page._spotify_client_id_input.setText("")
+    valid, _ = page.validate()
+    assert valid is False
+
+    page._spotify_client_id_input.setText("abc123")
+    valid, _ = page.validate()
+    assert valid is True
+
+
+def test_jellyfin_validation(qapp):
+    """Jellyfin enabled requires host and exactly one auth method."""
+    page = _make_page()
+    page._rfid_checkbox.setChecked(False)  # satisfy the RFID requirement
+    page._jellyfin_checkbox.setChecked(True)
+    valid, _ = page.validate()
+    assert valid is False  # host missing
+
+    page._jellyfin_host_input.setText("http://jellyfin.local:8096")
+    # API key mode: key required
+    page._jellyfin_api_key_radio.setChecked(True)
+    valid, _ = page.validate()
+    assert valid is False
+
+    page._jellyfin_api_key_input.setText("jf-key")
+    valid, _ = page.validate()
+    assert valid is True
+
+    # User login mode: username and password required
+    page._jellyfin_user_radio.setChecked(True)
+    page._jellyfin_api_key_input.setText("")
+    valid, _ = page.validate()
+    assert valid is False
+
+    page._jellyfin_username_input.setText("jelly")
+    page._jellyfin_password_input.setText("pw")
+    valid, _ = page.validate()
+    assert valid is True
+
+
+def test_plugin_state_saved_on_leave(qapp):
+    """Plugin fields write their values to state on leave."""
+    page = _make_page()
+    page._spotify_checkbox.setChecked(True)
+    page._spotify_client_id_input.setText("abc123")
+    page._spotify_redirect_uri_input.setText("http://127.0.0.1:3000/cb")
+    page._spotify_device_name_input.setText("Kitchen")
+
+    page._jellyfin_checkbox.setChecked(True)
+    page._jellyfin_host_input.setText("http://jellyfin.local:8096")
+    page._jellyfin_user_radio.setChecked(True)
+    page._jellyfin_username_input.setText("jelly")
+    page._jellyfin_password_input.setText("pw")
+
+    page.on_leave()
+    assert page.state.setup_spotify is True
+    assert page.state.spotify_client_id == "abc123"
+    assert page.state.spotify_redirect_uri == "http://127.0.0.1:3000/cb"
+    assert page.state.spotify_device_name == "Kitchen"
+    assert page.state.enable_jellyfin is True
+    assert page.state.jellyfin_host == "http://jellyfin.local:8096"
+    assert page.state.jellyfin_api_key == ""
+    assert page.state.jellyfin_username == "jelly"
+    assert page.state.jellyfin_password == "pw"
 
 
 def test_branch_url_fills_fork_and_branch(qapp):
@@ -368,8 +464,8 @@ def test_every_option_entry_has_info_icon(qapp):
     page = _make_page()
     icons = page.findChildren(InfoIcon)
     # System (8) + Services (Samba, WebApp, Kiosk) + RFID row + Audio +
-    # Source (URL, fork, branch, bundle).
-    assert len(icons) == 17
+    # Plugins (Spotify, Jellyfin) + Source (URL, fork, branch, bundle).
+    assert len(icons) == 19
     for icon in icons:
         assert icon._description, "info icon without a description"
         assert len(icon._description) > 20, "description too short to be useful"

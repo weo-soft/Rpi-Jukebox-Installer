@@ -73,6 +73,7 @@ class SummaryPage(BasePage):
         right_col.setSpacing(12)
         self._add_section(right_col, "Options", "options")
         self._add_section(right_col, "Audio", "audio")
+        self._add_section(right_col, "Plugins", "plugins")
         columns.addLayout(right_col, stretch=1)
 
         layout.addLayout(columns)
@@ -132,6 +133,24 @@ class SummaryPage(BasePage):
 
         self._summary_labels["audio"].setText(
             f"HiFiBerry Board: {s.audio_hifiberry_board or 'none'}"
+        )
+
+        spotify = (
+            f"Spotify: on (client {s.spotify_client_id}, "
+            f"device '{s.spotify_device_name}')"
+            if s.setup_spotify
+            else "Spotify: off"
+        )
+        if s.enable_jellyfin:
+            jellyfin = (
+                f"Jellyfin: on ({s.jellyfin_host}, API key)"
+                if s.jellyfin_api_key
+                else f"Jellyfin: on ({s.jellyfin_host}, user {s.jellyfin_username})"
+            )
+        else:
+            jellyfin = "Jellyfin: off"
+        self._summary_labels["plugins"].setText(
+            f"{spotify}\n{jellyfin}"
         )
 
         if s.existing_installation:

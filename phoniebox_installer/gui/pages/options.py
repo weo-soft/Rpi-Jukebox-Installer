@@ -6,6 +6,7 @@ from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QLabel, QVBoxLayout, QHBoxLayout, QLineEdit,
     QComboBox, QFrame, QGroupBox, QScrollArea, QWidget, QCompleter,
+    QRadioButton, QButtonGroup,
 )
 
 from phoniebox_installer.gui.pages.base import BasePage
@@ -40,6 +41,10 @@ WEBAPP_BUNDLE_MODES = [
     ("release-only", "Upstream / default (release bundle)"),
     ("true", "Fork / branch (development bundle)"),
 ]
+
+#: Default Spotify OAuth callback URI, matching
+#: SPOTIFY_DEFAULT_REDIRECT_URI in installation/includes/01_default_config.sh.
+SPOTIFY_DEFAULT_REDIRECT_URI = "http://127.0.0.1:3000/api/v1/spotify/oauth/callback"
 
 
 #: Explanations behind the info icons, taken from the Phoniebox install
@@ -159,6 +164,28 @@ OPTION_INFO = {
         "• hifiberry-dac — HiFiBerry MiniAmp / I2S PCM5102A DAC\n"
         "• hifiberry-amp — HiFiBerry Amp+ (not Amp2)\n\n"
         "The on-chip audio is disabled automatically when a board is selected.",
+    ),
+    "spotify": (
+        "Spotify",
+        "Installs librespot as a user service and configures the Spotify\n"
+        "player backend in the Web App.\n\n"
+        "Spotify playback requires a Premium account and a Spotify developer\n"
+        "app:\n"
+        "1. Go to https://developer.spotify.com/dashboard and create an app.\n"
+        "2. Enter the exact Redirect URI below (the default targets the Web App\n"
+        "   via an SSH tunnel).\n"
+        "3. Copy the Client ID into the Client ID field.\n\n"
+        "After the installation, connect the account in the Web App under\n"
+        "Settings > Spotify > Connect.",
+    ),
+    "jellyfin": (
+        "Jellyfin",
+        "Configures the Jellyfin player backend in jukebox.yaml. The Jellyfin\n"
+        "media server is not installed — you only connect to an existing one\n"
+        "on your network (e.g. http://jellyfin.local:8096).\n\n"
+        "Authentication: either an API key (Jellyfin Dashboard → API Keys) or\n"
+        "a Jellyfin username + password. The user login honors the library\n"
+        "permissions of that account.",
     ),
 }
 
@@ -376,6 +403,89 @@ class OptionsPage(BasePage):
 
         layout.addLayout(columns)
 
+        # ---- Plugins: Spotify + Jellyfin ----
+        plugins_group = QGroupBox("Plugins")
+        plugins_layout = QVBoxLayout(plugins_group)
+        plugins_layout.setSpacing(8)
+
+        # --- Spotify ---
+        spotify_frame = QFrame()
+        spotify_layout = QVBoxLayout(spotify_frame)
+        spotify_layout.setContentsMargins(8, 6, 8, 6)
+        spotify_layout.setSpacing(6)
+
+        spotify_row = QHBoxLayout()
+        self._spotify_checkbox = CustomCheckBox("Install Spotify support")
+        self._spotify_checkbox.setChecked(False)
+        spotify_row.addWidget(self._spotify_checkbox)
+        spotify_row.addWidget(self._make_info_icon("spotify"))
+        spotify_row.addStretch()
+        spotify_layout.addLayout(spotify_row)
+
+        self._spotify_client_id_input = QLineEdit()
+        self._spotify_client_id_input.setPlaceholderText("Spotify developer app client ID")
+        spotify_layout.addWidget(self._spotify_client_id_input)
+
+        self._spotify_redirect_uri_input = QLineEdit(SPOTIFY_DEFAULT_REDIRECT_URI)
+        spotify_layout.addWidget(self._spotify_redirect_uri_input)
+
+        self._spotify_device_name_input = QLineEdit("Phoniebox")
+        self._spotify_device_name_input.setPlaceholderText("Spotify Connect device name")
+        spotify_layout.addWidget(self._spotify_device_name_input)
+        spotify_layout.addWidget(QLabel(
+            "Spotify requires a Premium account and a developer app. "
+            "Client ID, Redirect URI and device name map to SPOTIFY_*."
+        ))
+        plugins_layout.addWidget(spotify_frame)
+
+        # --- Jellyfin ---
+        jellyfin_frame = QFrame()
+        jellyfin_layout = QVBoxLayout(jellyfin_frame)
+        jellyfin_layout.setContentsMargins(8, 6, 8, 6)
+        jellyfin_layout.setSpacing(6)
+
+        jellyfin_row = QHBoxLayout()
+        self._jellyfin_checkbox = CustomCheckBox("Enable Jellyfin player backend")
+        self._jellyfin_checkbox.setChecked(False)
+        jellyfin_row.addWidget(self._jellyfin_checkbox)
+        jellyfin_row.addWidget(self._make_info_icon("jellyfin"))
+        jellyfin_row.addStretch()
+        jellyfin_layout.addLayout(jellyfin_row)
+
+        self._jellyfin_host_input = QLineEdit()
+        self._jellyfin_host_input.setPlaceholderText(
+            "Jellyfin server URL, e.g. http://jellyfin.local:8096"
+        )
+        jellyfin_layout.addWidget(self._jellyfin_host_input)
+
+        auth_row = QHBoxLayout()
+        self._jellyfin_api_key_radio = QRadioButton("API key")
+        self._jellyfin_api_key_radio.setChecked(True)
+        self._jellyfin_user_radio = QRadioButton("Jellyfin user login")
+        self._auth_group = QButtonGroup(self)
+        self._auth_group.addButton(self._jellyfin_api_key_radio)
+        self._auth_group.addButton(self._jellyfin_user_radio)
+        auth_row.addWidget(self._jellyfin_api_key_radio)
+        auth_row.addWidget(self._jellyfin_user_radio)
+        auth_row.addStretch()
+        jellyfin_layout.addLayout(auth_row)
+
+        self._jellyfin_api_key_input = QLineEdit()
+        self._jellyfin_api_key_input.setPlaceholderText("API key (Jellyfin Dashboard → API Keys)")
+        jellyfin_layout.addWidget(self._jellyfin_api_key_input)
+
+        self._jellyfin_username_input = QLineEdit()
+        self._jellyfin_username_input.setPlaceholderText("Jellyfin username")
+        jellyfin_layout.addWidget(self._jellyfin_username_input)
+
+        self._jellyfin_password_input = QLineEdit()
+        self._jellyfin_password_input.setPlaceholderText("Jellyfin password")
+        self._jellyfin_password_input.setEchoMode(QLineEdit.Password)
+        jellyfin_layout.addWidget(self._jellyfin_password_input)
+        plugins_layout.addWidget(jellyfin_frame)
+
+        layout.addWidget(plugins_group)
+
         # Phoniebox Source — developer-focused, so it is placed below the main
         # option blocks instead of being the most prominent section.
         layout.addWidget(source_group)
@@ -384,6 +494,10 @@ class OptionsPage(BasePage):
 
         self._wire_dependencies()
         self._update_rfid_highlight()
+        # Apply the initial enabled/disabled state of the plugin fields
+        # (the toggled signals do not fire for the constructor defaults).
+        self._on_spotify_toggled(self._spotify_checkbox.isChecked())
+        self._on_jellyfin_toggled(self._jellyfin_checkbox.isChecked())
 
     def _update_rfid_highlight(self, *_args):
         """Mark the reader combo (orange border) while a choice is required.
@@ -432,6 +546,29 @@ class OptionsPage(BasePage):
         )
         # Reload the branch list (debounced) when the fork changes.
         self._git_fork_input.textChanged.connect(self._on_fork_changed)
+
+        # Spotify / Jellyfin plugin fields follow their enable checkbox.
+        self._spotify_checkbox.toggled.connect(self._on_spotify_toggled)
+        self._jellyfin_checkbox.toggled.connect(self._on_jellyfin_toggled)
+        self._jellyfin_api_key_radio.toggled.connect(self._on_jellyfin_auth_toggled)
+
+    def _on_spotify_toggled(self, checked):
+        self._spotify_client_id_input.setEnabled(checked)
+        self._spotify_redirect_uri_input.setEnabled(checked)
+        self._spotify_device_name_input.setEnabled(checked)
+
+    def _on_jellyfin_toggled(self, checked):
+        self._jellyfin_host_input.setEnabled(checked)
+        self._jellyfin_api_key_radio.setEnabled(checked)
+        self._jellyfin_user_radio.setEnabled(checked)
+        self._on_jellyfin_auth_toggled(self._jellyfin_api_key_radio.isChecked())
+
+    def _on_jellyfin_auth_toggled(self, _api_key_selected):
+        api_key_mode = self._jellyfin_api_key_radio.isChecked()
+        enabled = self._jellyfin_checkbox.isChecked()
+        self._jellyfin_api_key_input.setEnabled(enabled and api_key_mode)
+        self._jellyfin_username_input.setEnabled(enabled and not api_key_mode)
+        self._jellyfin_password_input.setEnabled(enabled and not api_key_mode)
 
     def _on_webapp_toggled(self, checked):
         self._kiosk_checkbox.setEnabled(checked)
@@ -592,6 +729,22 @@ class OptionsPage(BasePage):
         if self._rfid_checkbox.isChecked() and not self._rfid_reader_combo.currentData():
             return (False, "RFID reader is enabled — please select a reader type "
                            "or disable the RFID reader.")
+        if self._spotify_checkbox.isChecked() and not self._spotify_client_id_input.text().strip():
+            return (False, "Spotify is enabled — please enter the Spotify developer app "
+                           "client ID.")
+        if (self._spotify_checkbox.isChecked()
+                and not self._spotify_redirect_uri_input.text().strip()):
+            return (False, "Spotify is enabled — please enter the OAuth redirect URI.")
+        if self._jellyfin_checkbox.isChecked():
+            if not self._jellyfin_host_input.text().strip():
+                return (False, "Jellyfin is enabled — please enter the Jellyfin server URL.")
+            if self._jellyfin_api_key_radio.isChecked():
+                if not self._jellyfin_api_key_input.text().strip():
+                    return (False, "Jellyfin is enabled — please enter an API key or "
+                                   "switch to the Jellyfin user login.")
+            elif (not self._jellyfin_username_input.text().strip()
+                  or not self._jellyfin_password_input.text()):
+                return (False, "Jellyfin is enabled — please enter username and password.")
         return (True, "")
 
     def on_leave(self):
@@ -615,3 +768,14 @@ class OptionsPage(BasePage):
         self.state.enable_webapp_prod_download = (
             self._webapp_bundle_combo.currentData() or "release-only"
         )
+        self.state.setup_spotify = self._spotify_checkbox.isChecked()
+        self.state.spotify_client_id = self._spotify_client_id_input.text().strip()
+        self.state.spotify_redirect_uri = self._spotify_redirect_uri_input.text().strip()
+        self.state.spotify_device_name = (
+            self._spotify_device_name_input.text().strip() or "Phoniebox"
+        )
+        self.state.enable_jellyfin = self._jellyfin_checkbox.isChecked()
+        self.state.jellyfin_host = self._jellyfin_host_input.text().strip()
+        self.state.jellyfin_api_key = self._jellyfin_api_key_input.text().strip()
+        self.state.jellyfin_username = self._jellyfin_username_input.text().strip()
+        self.state.jellyfin_password = self._jellyfin_password_input.text()

@@ -36,6 +36,9 @@ The installer walks you through a six-step wizard:
    - **Services:** RFID reader (choose reader type: PN532, RC522, RDM6300,
      MFRC522, generic NFC/USB), Samba, web app, kiosk mode.
    - **Audio:** select a HiFiBerry board (DAC+, Digi, DAC, Amp).
+   - **Plugins:** Spotify (librespot — developer-app client ID, OAuth redirect
+     URI, device name) and Jellyfin (server URL plus API key or
+     username/password login).
 
 5. **Review** — summary of all choices. If an existing installation was
    detected, you decide whether to back it up or remove it.
@@ -73,7 +76,7 @@ checks.
 
 ### Configure Your Installation
 
-Phoniebox source, system options, services and audio.
+Phoniebox source, system options, services, audio and plugins.
 
 <p align="center">
   <img src="docs/screenshots/options.png"

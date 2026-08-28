@@ -59,6 +59,7 @@ def test_summary_laid_out_in_two_columns(qapp):
     ]
     assert "Options" in right_titles
     assert "Audio" in right_titles
+    assert "Plugins" in right_titles
     # The existing-install action is not tucked inside a column.
     assert "Existing Installation" not in right_titles
     assert "Existing Installation" not in left_titles
@@ -126,6 +127,33 @@ def test_all_state_fields_displayed(qapp):
     assert "armv7l" in text
     assert "MiczFlor" in text
     assert "pn532_i2c_py532" in text
+
+
+def test_plugin_state_displayed(qapp):
+    """Spotify/Jellyfin choices appear in the Plugins summary label."""
+    page = _make_page()
+    page.state.setup_spotify = True
+    page.state.spotify_client_id = "abc123"
+    page.state.spotify_device_name = "Kitchen"
+    page.state.enable_jellyfin = True
+    page.state.jellyfin_host = "http://jellyfin.local:8096"
+    page.state.jellyfin_api_key = "jf-key"
+    page.on_enter()
+
+    plugins_text = page._summary_labels["plugins"].text()
+    assert "Spotify: on" in plugins_text
+    assert "abc123" in plugins_text
+    assert "Kitchen" in plugins_text
+    assert "Jellyfin: on" in plugins_text
+    assert "http://jellyfin.local:8096" in plugins_text
+    assert "API key" in plugins_text
+
+    # User login is shown instead of the API key when no key is set.
+    page.state.jellyfin_api_key = ""
+    page.state.jellyfin_username = "jelly"
+    page.on_enter()
+    plugins_text = page._summary_labels["plugins"].text()
+    assert "user jelly" in plugins_text
 
 
 def test_update_mode_warning_shown(qapp):

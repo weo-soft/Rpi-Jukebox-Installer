@@ -12,7 +12,7 @@ Uses ruamel.yaml for consistent YAML handling with the Phoniebox core.
 
 import os
 import logging
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import List
 
@@ -61,8 +61,18 @@ class InstallationOptions:
     # "false" is unsupported — local WebApp builds were removed; the install fails.
     enable_webapp_prod_download: str = "release-only"
 
-    # === Plugins (future placeholders) ===
-    selected_plugins: List[str] = field(default_factory=list)
+    # === Plugins (Spotify + Jellyfin) ===
+    # Map to SETUP_SPOTIFY / SPOTIFY_* / ENABLE_JELLYFIN / JELLYFIN_* consumed
+    # by setup_spotify.sh / setup_jellyfin.sh (see 01_default_config.sh).
+    setup_spotify: bool = False
+    spotify_client_id: str = ""
+    spotify_redirect_uri: str = ""
+    spotify_device_name: str = "Phoniebox"
+    enable_jellyfin: bool = False
+    jellyfin_host: str = ""
+    jellyfin_api_key: str = ""
+    jellyfin_username: str = ""
+    jellyfin_password: str = ""
 
 
 class ConfigManager:
@@ -195,6 +205,21 @@ class ConfigManager:
             "audio": {
                 "hifiberry_board": state.audio_hifiberry_board,
             },
+            "plugins": {
+                "spotify": {
+                    "setup": state.setup_spotify,
+                    "client_id": state.spotify_client_id,
+                    "redirect_uri": state.spotify_redirect_uri,
+                    "device_name": state.spotify_device_name,
+                },
+                "jellyfin": {
+                    "enable": state.enable_jellyfin,
+                    "host": state.jellyfin_host,
+                    "api_key": state.jellyfin_api_key,
+                    "username": state.jellyfin_username,
+                    "password": state.jellyfin_password,
+                },
+            },
         }
 
     def generate_install_config_env(self, state) -> str:
@@ -231,6 +256,15 @@ class ConfigManager:
             ("UPDATE_RASPI_OS", state.update_raspi_os),
             ("ENABLE_WEBAPP_PROD_DOWNLOAD", state.enable_webapp_prod_download),
             ("HIFIBERRY_BOARD", state.audio_hifiberry_board),
+            ("SETUP_SPOTIFY", state.setup_spotify),
+            ("SPOTIFY_CLIENT_ID", state.spotify_client_id),
+            ("SPOTIFY_REDIRECT_URI", state.spotify_redirect_uri),
+            ("SPOTIFY_DEVICE_NAME", state.spotify_device_name),
+            ("ENABLE_JELLYFIN", state.enable_jellyfin),
+            ("JELLYFIN_HOST", state.jellyfin_host),
+            ("JELLYFIN_API_KEY", state.jellyfin_api_key),
+            ("JELLYFIN_USERNAME", state.jellyfin_username),
+            ("JELLYFIN_PASSWORD", state.jellyfin_password),
             ("EXISTING_INSTALL_ACTION", state.existing_install_action),
         ]  # NOTE: MODE ist rein informativ — kein Skript konsumiert ihn derzeit
 

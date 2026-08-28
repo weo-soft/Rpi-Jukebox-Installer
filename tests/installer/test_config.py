@@ -67,6 +67,29 @@ def test_generate_install_config_yaml(tmp_path):
     assert yaml_dict["options"]["enable_static_ip"] is True
 
 
+def test_generate_install_config_yaml_plugins(tmp_path):
+    """generate_install_config_yaml() includes the plugins section."""
+    cfg = ConfigManager(config_path=tmp_path / "c.yaml")
+    state = InstallerState(
+        setup_spotify=True,
+        spotify_client_id="abc123",
+        enable_jellyfin=True,
+        jellyfin_host="http://jellyfin.local:8096",
+        jellyfin_api_key="jf-key",
+    )
+    yaml_dict = cfg.generate_install_config_yaml(state)
+    plugins = yaml_dict["plugins"]
+    assert plugins["spotify"] == {
+        "setup": True,
+        "client_id": "abc123",
+        "redirect_uri": "",
+        "device_name": "Phoniebox",
+    }
+    assert plugins["jellyfin"]["enable"] is True
+    assert plugins["jellyfin"]["host"] == "http://jellyfin.local:8096"
+    assert plugins["jellyfin"]["api_key"] == "jf-key"
+
+
 def test_generate_install_config_env(tmp_path):
     """generate_install_config_env() produces flat KEY=VALUE lines."""
     cfg = ConfigManager(config_path=tmp_path / "c.yaml")
@@ -82,6 +105,39 @@ def test_generate_install_config_env(tmp_path):
     assert "ENABLE_STATIC_IP=true" in env
     assert "EXISTING_INSTALL_ACTION='backup'" in env
     assert "HIFIBERRY_BOARD='hifiberry-dacplus'" in env
+
+
+def test_generate_install_config_env_plugins(tmp_path):
+    """Spotify/Jellyfin options are exported to the flat config file."""
+    cfg = ConfigManager(config_path=tmp_path / "c.yaml")
+    state = InstallerState(
+        setup_spotify=True,
+        spotify_client_id="abc123",
+        spotify_redirect_uri="http://127.0.0.1:3000/api/v1/spotify/oauth/callback",
+        spotify_device_name="Kitchen",
+        enable_jellyfin=True,
+        jellyfin_host="http://jellyfin.local:8096",
+        jellyfin_api_key="jf-key",
+    )
+    env = cfg.generate_install_config_env(state)
+    assert "SETUP_SPOTIFY=true" in env
+    assert "SPOTIFY_CLIENT_ID='abc123'" in env
+    assert "SPOTIFY_REDIRECT_URI='http://127.0.0.1:3000/api/v1/spotify/oauth/callback'" in env
+    assert "SPOTIFY_DEVICE_NAME='Kitchen'" in env
+    assert "ENABLE_JELLYFIN=true" in env
+    assert "JELLYFIN_HOST='http://jellyfin.local:8096'" in env
+    assert "JELLYFIN_API_KEY='jf-key'" in env
+
+
+def test_generate_install_config_env_plugins_disabled(tmp_path):
+    """Disabled plugins export booleans only — no credentials."""
+    cfg = ConfigManager(config_path=tmp_path / "c.yaml")
+    state = InstallerState()
+    env = cfg.generate_install_config_env(state)
+    assert "SETUP_SPOTIFY=false" in env
+    assert "ENABLE_JELLYFIN=false" in env
+    assert "SPOTIFY_CLIENT_ID=" not in env
+    assert "JELLYFIN_HOST=" not in env
 
 
 def test_language_get_set(tmp_path):

@@ -6,8 +6,8 @@ that is passed between wizard pages. Pages read from this state
 to populate their fields and write to it on validation/save.
 """
 
-from dataclasses import dataclass, field
-from typing import List, Optional
+from dataclasses import dataclass
+from typing import Optional
 
 
 @dataclass
@@ -82,8 +82,20 @@ class InstallerState:
     # WebApp (precompiled bundle)
     enable_webapp_prod_download: str = "release-only"
 
-    # Plugins (future placeholders)
-    selected_plugins: List[str] = field(default_factory=list)
+    # === Plugins ===
+    # Spotify (librespot user service + Web App OAuth); the installer config
+    # maps these to SETUP_SPOTIFY / SPOTIFY_* (see 01_default_config.sh).
+    setup_spotify: bool = False
+    spotify_client_id: str = ""
+    spotify_redirect_uri: str = ""
+    spotify_device_name: str = "Phoniebox"
+    # Jellyfin (player backend configured in jukebox.yaml); maps to
+    # ENABLE_JELLYFIN / JELLYFIN_*.
+    enable_jellyfin: bool = False
+    jellyfin_host: str = ""
+    jellyfin_api_key: str = ""
+    jellyfin_username: str = ""
+    jellyfin_password: str = ""
 
     # =========================================================================
     # Phoniebox Source (populated by OptionsPage, M10)
