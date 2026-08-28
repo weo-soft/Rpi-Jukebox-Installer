@@ -27,6 +27,9 @@ class _FakeController:
     def stop_reader_config_session(self):
         self.calls.append("stop_reader_config_session")
 
+    def reboot_target(self):
+        self.calls.append("reboot_target")
+
 
 def _make_page(module="generic_usb", controller=None):
     state = InstallerState()
@@ -209,3 +212,51 @@ def test_output_received_strips_ansi(qapp):
     text = page._terminal.toPlainText()
     assert "\x1b" not in text
     assert "Reader module number? [0..7]" in text
+
+
+def test_successful_session_starts_reboot_countdown(qapp):
+    """A successful configuration triggers the reboot countdown."""
+    page, _state, _bus, _ctrl = _make_page()
+    page.on_enter()
+    page._on_session_exited(0)
+
+    assert page._timer.isActive() is True
+    assert page._countdown_label.isHidden() is False
+    assert "restarted" in page._status_label.text().lower()
+    assert page.validate() == (True, "")
+
+
+def test_cancel_reboot_stops_countdown(qapp):
+    """Cancelling the reboot stops the countdown timer."""
+    page, _state, _bus, _ctrl = _make_page()
+    page.on_enter()
+    page._on_session_exited(0)
+    page._cancel_reboot()
+
+    assert page._timer.isActive() is False
+    assert page._reboot_cancelled is True
+
+
+def test_commit_reboots_when_pending(qapp):
+    """Wizard finish honours a pending reboot after a successful config."""
+    page, _state, _bus, ctrl = _make_page()
+    page.on_enter()
+    page._on_session_exited(0)
+
+    page.commit()
+    assert "reboot_target" in ctrl.calls
+    assert page._reboot_sent is True
+
+
+def test_reboot_complete_when_reachable_again(qapp):
+    """Once the Pi is back online after the reboot, the page reports success."""
+    page, _state, _bus, _ctrl = _make_page()
+    page.on_enter()
+    page._on_session_exited(0)
+    page._do_reboot()
+    page._poll_timer.stop()  # keep the background poll out of the test
+    page._seen_down = True
+
+    page._on_reachable(True)
+    assert page._poll_timer.isActive() is False
+    assert "Restart complete" in page._countdown_label.text()

@@ -55,6 +55,10 @@ The installer walks you through a seven-step wizard:
    the official `run_register_rfid_reader.py` tool interactively in a
    terminal-like view. The user is guided through device/pin selection; the
    jukebox-daemon is stopped for the configuration and restarted afterwards.
+   After a successful configuration the installer **reboots the Raspberry Pi
+   again** (30-second countdown, "Restart Now"/"Cancel Restart") so the new
+   reader configuration is fully applied, and waits for the Pi to come back
+   online.
 
 ## Screenshots
 

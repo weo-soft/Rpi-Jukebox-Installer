@@ -9,11 +9,14 @@ before and restarted after the configuration (see READER_CONFIG_COMMAND).
 """
 
 import re
+import socket
+import threading
 
 from PySide6.QtCore import Signal, QTimer
 from PySide6.QtGui import QTextCursor
 from PySide6.QtWidgets import (
     QLabel, QVBoxLayout, QHBoxLayout, QPushButton, QPlainTextEdit, QLineEdit,
+    QProgressBar,
 )
 
 from phoniebox_installer.gui.pages.base import BasePage
@@ -24,6 +27,11 @@ from phoniebox_installer.app.readers import MANUAL_CONFIG_READERS
 #: configuration process may be stuck (helps to distinguish a real hang from a
 #: long-running but silent command).
 NO_OUTPUT_WARNING_SECONDS = 20
+
+#: Seconds the page waits after a successful reader configuration before
+#: rebooting the Raspberry Pi (the new reader config is only fully applied
+#: after a reboot).
+REBOOT_COUNTDOWN_SECONDS = 30
 
 #: Complete ANSI escape sequences: CSI (colors/cursor), OSC (e.g. title) and
 #: single-character escapes. The terminal widget cannot render them, so they
@@ -66,6 +74,8 @@ class ReaderConfigPage(BasePage):
     # queues cross-thread signal deliveries automatically).
     _output_received = Signal(str)
     _session_exited = Signal(int)
+    # Emitted from the availability-poll thread; handled on the GUI thread.
+    _reachable = Signal(bool)
 
     def __init__(self, state, event_bus, controller=None, parent=None):
         super().__init__(state, event_bus, controller=controller, parent=parent)
@@ -75,6 +85,11 @@ class ReaderConfigPage(BasePage):
         self._skipped = False
         self._connect_requested = False
         self._ansi_pending = ""
+
+        self._countdown_remaining = REBOOT_COUNTDOWN_SECONDS
+        self._reboot_sent = False
+        self._reboot_cancelled = False
+        self._seen_down = False
 
         self._setup_ui()
 
@@ -87,6 +102,16 @@ class ReaderConfigPage(BasePage):
         self._no_output_timer.setSingleShot(True)
         self._no_output_timer.setInterval(NO_OUTPUT_WARNING_SECONDS * 1000)
         self._no_output_timer.timeout.connect(self._on_no_output)
+
+        # Reboot countdown + reachability polling (after a successful config).
+        self._timer = QTimer(self)
+        self._timer.setInterval(1000)
+        self._timer.timeout.connect(self._tick)
+
+        self._poll_timer = QTimer(self)
+        self._poll_timer.setInterval(3000)
+        self._poll_timer.timeout.connect(self._poll_availability)
+        self._reachable.connect(self._on_reachable)
 
     # ------------------------------------------------------------------
     # UI
@@ -138,6 +163,35 @@ class ReaderConfigPage(BasePage):
         button_row.addWidget(self._skip_btn)
         layout.addLayout(button_row)
 
+        # Post-configuration reboot (a fresh reboot applies the new reader
+        # config). Hidden until the configuration finished successfully.
+        self._countdown_label = QLabel("")
+        self._countdown_label.setWordWrap(True)
+        self._countdown_label.setStyleSheet(
+            "font-size: 16px; font-weight: bold; color: #b04a00;"
+        )
+        self._countdown_label.setVisible(False)
+        layout.addWidget(self._countdown_label)
+
+        self._reboot_spinner = QProgressBar()
+        self._reboot_spinner.setRange(0, 0)  # indeterminate
+        self._reboot_spinner.setTextVisible(False)
+        self._reboot_spinner.setFixedHeight(16)
+        self._reboot_spinner.setVisible(False)
+        layout.addWidget(self._reboot_spinner)
+
+        reboot_row = QHBoxLayout()
+        self._restart_now_btn = QPushButton("\U0001f504 Restart Now")
+        self._restart_now_btn.clicked.connect(self._restart_now)
+        reboot_row.addWidget(self._restart_now_btn)
+        self._cancel_reboot_btn = QPushButton("Cancel Restart")
+        self._cancel_reboot_btn.clicked.connect(self._cancel_reboot)
+        reboot_row.addWidget(self._cancel_reboot_btn)
+        reboot_row.addStretch()
+        layout.addLayout(reboot_row)
+        self._restart_now_btn.setVisible(False)
+        self._cancel_reboot_btn.setVisible(False)
+
         self._set_input_enabled(False)
 
     def _set_input_enabled(self, enabled: bool):
@@ -165,6 +219,15 @@ class ReaderConfigPage(BasePage):
         self._session_done = False
         self._skipped = False
         self._connect_requested = False
+        # Reset the reboot state.
+        self._countdown_remaining = REBOOT_COUNTDOWN_SECONDS
+        self._reboot_sent = False
+        self._reboot_cancelled = False
+        self._seen_down = False
+        self._countdown_label.setVisible(False)
+        self._reboot_spinner.setVisible(False)
+        self._restart_now_btn.setVisible(False)
+        self._cancel_reboot_btn.setVisible(False)
         self._subscribe()
 
         if self.controller is None:
@@ -182,6 +245,8 @@ class ReaderConfigPage(BasePage):
         if self.controller is not None:
             self.controller.stop_reader_config_session()
         self._no_output_timer.stop()
+        self._timer.stop()
+        self._poll_timer.stop()
         self._unsubscribe()
 
     def validate(self):
@@ -192,6 +257,12 @@ class ReaderConfigPage(BasePage):
         if self._session_active:
             return (False, "Please finish the configuration (or skip it) before continuing.")
         return (True, "")
+
+    def commit(self):
+        """On wizard finish, honour the pending reboot intent."""
+        if (self._session_done and not self._reboot_cancelled
+                and not self._reboot_sent):
+            self._do_reboot()
 
     # ------------------------------------------------------------------
     # Connection + session control
@@ -334,12 +405,114 @@ class ReaderConfigPage(BasePage):
         self._set_input_enabled(False)
         self._connect_btn.setEnabled(False)
         if exit_code == 0:
-            self._set_status("✅ Configuration finished. The jukebox-daemon has been "
-                             "restarted. You can now continue.")
+            self._set_status("✅ Configuration finished. The Raspberry Pi will be "
+                             "restarted to apply the new reader configuration.")
+            self._start_reboot_countdown()
         else:
             self._set_status(f"⚠️ Configuration ended with exit code {exit_code}. "
                              "The jukebox-daemon has been restarted. You can retry later "
                              "on the Pi or skip this step.")
+
+    # ------------------------------------------------------------------
+    # Post-configuration reboot
+    # ------------------------------------------------------------------
+
+    def _start_reboot_countdown(self):
+        self._countdown_remaining = REBOOT_COUNTDOWN_SECONDS
+        self._countdown_label.setStyleSheet(
+            "font-size: 16px; font-weight: bold; color: #b04a00;"
+        )
+        self._update_countdown_label()
+        self._countdown_label.setVisible(True)
+        self._restart_now_btn.setVisible(True)
+        self._restart_now_btn.setEnabled(True)
+        self._cancel_reboot_btn.setVisible(True)
+        self._cancel_reboot_btn.setEnabled(True)
+        self._timer.start()
+
+    def _tick(self):
+        if self._reboot_sent or self._reboot_cancelled:
+            return
+        self._countdown_remaining -= 1
+        if self._countdown_remaining <= 0:
+            self._do_reboot()
+        else:
+            self._update_countdown_label()
+
+    def _update_countdown_label(self):
+        self._countdown_label.setText(
+            "\U0001f504 The Raspberry Pi will restart automatically in "
+            f"{self._countdown_remaining} s\u2026"
+        )
+
+    def _restart_now(self):
+        self._do_reboot()
+
+    def _cancel_reboot(self):
+        if self._reboot_sent:
+            return
+        self._reboot_cancelled = True
+        self._timer.stop()
+        self._countdown_label.setText(
+            "Restart cancelled. Please restart the Pi manually later."
+        )
+        self._restart_now_btn.setVisible(False)
+        self._cancel_reboot_btn.setVisible(False)
+
+    def _do_reboot(self):
+        if self._reboot_sent or self._reboot_cancelled:
+            return
+        self._reboot_sent = True
+        self._timer.stop()
+        self._countdown_label.setText("\U0001f504 Restarting the Raspberry Pi\u2026")
+        self._restart_now_btn.setVisible(False)
+        self._cancel_reboot_btn.setVisible(False)
+        self._reboot_spinner.setVisible(True)
+        self._start_availability_poll()
+        if self.controller is not None:
+            self.controller.reboot_target()
+
+    def _start_availability_poll(self):
+        self._seen_down = False
+        self._poll_timer.start()
+        self._poll_availability()
+
+    def _poll_availability(self):
+        if not self.state.target_host:
+            return
+        threading.Thread(target=self._emit_reachability, daemon=True).start()
+
+    def _emit_reachability(self):
+        self._reachable.emit(self._check_reachable())
+
+    def _check_reachable(self) -> bool:
+        """Return True if the SSH port accepts a connection (Pi is back up)."""
+        host = self.state.target_host
+        port = self.state.ssh_port
+        if not host:
+            return False
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(2.0)
+                return s.connect_ex((host, port)) == 0
+        except OSError:
+            return False
+
+    def _on_reachable(self, reachable: bool):
+        if reachable:
+            if self._seen_down:
+                # The Pi went offline and is back — reboot complete.
+                self._poll_timer.stop()
+                self._reboot_spinner.setVisible(False)
+                self._countdown_label.setStyleSheet(
+                    "font-size: 16px; font-weight: bold; color: #2a7d2a;"
+                )
+                self._countdown_label.setText(
+                    "\u2705 Restart complete — the Raspberry Pi is back online. "
+                    "You can now close the installer."
+                )
+        else:
+            self._seen_down = True
 
     def _set_status(self, text: str):
         self._status_label.setText(text)
