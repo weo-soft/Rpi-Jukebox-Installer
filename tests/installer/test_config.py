@@ -140,6 +140,31 @@ def test_generate_install_config_env_plugins_disabled(tmp_path):
     assert "JELLYFIN_HOST=" not in env
 
 
+def test_generate_install_config_env_manual_reader_skips_rfid(tmp_path):
+    """Manual-config readers are not configured by the non-interactive install.
+
+    The install scripts forward the reader module to
+    run_register_rfid_reader.py, which aborts with a RuntimeError when the
+    reader requires interactive customization but no terminal is available.
+    Such readers are configured interactively after the reboot by the
+    ReaderConfigPage, so the install step must skip them.
+    """
+    cfg = ConfigManager(config_path=tmp_path / "c.yaml")
+    state = InstallerState(enable_rfid_reader=True, rfid_reader_module="generic_nfcpy")
+    env = cfg.generate_install_config_env(state)
+    assert "ENABLE_RFID_READER=false" in env
+    assert "RFID_READER_MODULE" not in env
+
+
+def test_generate_install_config_env_auto_reader_keeps_module(tmp_path):
+    """Readers with module defaults are still configured non-interactively."""
+    cfg = ConfigManager(config_path=tmp_path / "c.yaml")
+    state = InstallerState(enable_rfid_reader=True, rfid_reader_module="pn532_i2c_py532")
+    env = cfg.generate_install_config_env(state)
+    assert "ENABLE_RFID_READER=true" in env
+    assert "RFID_READER_MODULE='pn532_i2c_py532'" in env
+
+
 def test_language_get_set(tmp_path):
     """language property reads/writes the language setting."""
     cfg = ConfigManager(config_path=tmp_path / "c.yaml")

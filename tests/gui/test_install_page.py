@@ -1,6 +1,7 @@
 """Tests for the InstallPage."""
 
 from phoniebox_installer.app.event_bus import EventBus
+from phoniebox_installer.app.events import WizardEvents
 from phoniebox_installer.app.state import InstallerState
 from phoniebox_installer.gui.pages.install import InstallPage
 
@@ -323,3 +324,53 @@ def test_on_enter_does_not_restart_after_success(qapp):
     page.on_enter()
 
     assert controller.install_starts == 1
+
+
+def test_reachable_advances_to_reader_config_when_needed(qapp):
+    """After the reboot the page auto-advances to the reader configuration."""
+    controller = _FakeController()
+    controller.needs_reader_config = lambda: True
+    page = _make_page(controller=controller)
+    advanced = []
+    page.event_bus.subscribe(WizardEvents.ADVANCE, advanced.append)
+
+    page._on_completed({})
+    page._restart_now()
+    page._on_reachable(False)  # Pi went offline during the reboot
+    page._on_reachable(True)   # Pi is back online
+
+    assert advanced == [{"page_id": "install"}]
+    assert "Opening the RFID reader configuration" in page._countdown_label.text()
+    page._poll_timer.stop()
+
+
+def test_reachable_does_not_advance_without_reader_config(qapp):
+    """Without a manual reader the page stays put and offers closing."""
+    page = _make_page()
+    advanced = []
+    page.event_bus.subscribe(WizardEvents.ADVANCE, advanced.append)
+
+    page._on_completed({})
+    page._restart_now()
+    page._on_reachable(False)
+    page._on_reachable(True)
+
+    assert advanced == []
+    assert "close the installer" in page._countdown_label.text()
+
+
+def test_advance_to_reader_config_published_only_once(qapp):
+    """An in-flight availability poll must not trigger a duplicate advance."""
+    controller = _FakeController()
+    controller.needs_reader_config = lambda: True
+    page = _make_page(controller=controller)
+    advanced = []
+    page.event_bus.subscribe(WizardEvents.ADVANCE, advanced.append)
+
+    page._on_completed({})
+    page._restart_now()
+    page._on_reachable(False)
+    page._on_reachable(True)
+    page._on_reachable(True)  # queued duplicate from an in-flight poll
+
+    assert len(advanced) == 1

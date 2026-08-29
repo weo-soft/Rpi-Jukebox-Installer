@@ -18,6 +18,8 @@ from typing import List
 
 from ruamel.yaml import YAML
 
+from phoniebox_installer.app.readers import MANUAL_CONFIG_READERS
+
 logger = logging.getLogger(__name__)
 
 # Default path for installer-local configuration
@@ -237,6 +239,20 @@ class ConfigManager:
             """Quote a value for safe use in a shell-sourced KEY=VALUE file."""
             return "'" + value.replace("'", "'\\''") + "'"
 
+        # Readers without usable module defaults (generic_usb, generic_nfcpy,
+        # rc522_spi) cannot be configured by the non-interactive install: the
+        # install scripts forward the module to run_register_rfid_reader.py,
+        # which aborts with a RuntimeError when no interactive terminal is
+        # available (the GUI installer runs the install without a PTY). These
+        # readers are configured interactively AFTER the reboot by the
+        # ReaderConfigPage, so the install step must skip the reader
+        # configuration here.
+        enable_rfid_reader = state.enable_rfid_reader
+        rfid_reader_module = state.rfid_reader_module
+        if enable_rfid_reader and rfid_reader_module in MANUAL_CONFIG_READERS:
+            enable_rfid_reader = False
+            rfid_reader_module = ""
+
         entries = [
             ("MODE", state.mode),
             ("GIT_USER", state.git_user),
@@ -248,8 +264,8 @@ class ConfigManager:
             ("DISABLE_ONBOARD_AUDIO", state.disable_onboard_audio),
             ("SETUP_MPD", state.setup_mpd),
             ("ENABLE_MPD_OVERWRITE_INSTALL", state.enable_mpd_overwrite_install),
-            ("ENABLE_RFID_READER", state.enable_rfid_reader),
-            ("RFID_READER_MODULE", state.rfid_reader_module),
+            ("ENABLE_RFID_READER", enable_rfid_reader),
+            ("RFID_READER_MODULE", rfid_reader_module),
             ("ENABLE_SAMBA", state.enable_samba),
             ("ENABLE_WEBAPP", state.enable_webapp),
             ("ENABLE_KIOSK_MODE", state.enable_kiosk_mode),
