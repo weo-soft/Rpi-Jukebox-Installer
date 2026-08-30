@@ -9,30 +9,12 @@ from PySide6.QtWidgets import (
     QRadioButton, QButtonGroup,
 )
 
-from phoniebox_installer.app.readers import MANUAL_CONFIG_READERS
 from phoniebox_installer.gui.pages.base import BasePage
 from phoniebox_installer.gui.widgets import (
     CollapsibleGroupBox, CustomCheckBox, InfoIcon,
 )
 from phoniebox_installer.util.validation import parse_github_branch_url
 from phoniebox_installer.util.network import fetch_github_branches
-
-#: (module name, display name) — the display names are the same labels the
-#: interactive install shows (components/rfid/hardware/<reader>/description.py).
-RFID_READERS = [
-    ("pn532_i2c_py532", "PN532 reader via I2C using py532 library"),
-    ("rc522_spi", "MFRC522 via SPI"),
-    ("rdm6300_serial", "RDM6300 via serial UART"),
-    ("mfrc522_i2c", "MFRC522 Reader using I2C via the mfrc522_i2c library"),
-    ("generic_nfcpy", "Generic NFCPY NFC Reader Module"),
-    ("generic_usb", "Generic USB Reader"),
-]
-
-#: Readers that have no usable module defaults and require interactive
-#: device/pin selection on the Raspberry Pi itself (run_register_rfid_reader.py).
-#: They cannot be configured by this remote/headless installer, so selecting
-#: them is blocked in validate() with a hint on how to proceed.
-RFID_MANUAL_READERS = MANUAL_CONFIG_READERS
 
 HIFIBERRY_BOARDS = [
     "hifiberry-dacplus",
@@ -131,18 +113,6 @@ OPTION_INFO = {
         "Update OS",
         "Updates the operating system (apt full-upgrade). This should be done "
         "eventually, but increases the installation time a lot.",
-    ),
-    "rfid": (
-        "RFID Reader",
-        "Phoniebox can be controlled with RFID cards/tags if you have an RFID "
-        "reader connected. Select this to set up a reader.\n\n"
-        "Available readers:\n"
-        "• PN532 reader via I2C using py532 library\n"
-        "• MFRC522 via SPI\n"
-        "• RDM6300 via serial UART\n"
-        "• MFRC522 Reader using I2C via the mfrc522_i2c library\n"
-        "• Generic NFCPY NFC Reader Module\n"
-        "• Generic USB Reader",
     ),
     "samba": (
         "Samba",
@@ -312,54 +282,6 @@ class OptionsPage(BasePage):
         services_group = QGroupBox("Services")
         services_layout = QVBoxLayout(services_group)
 
-        # RFID is the only option the user MUST decide on (enabled by default,
-        # but no reader type is pre-selected), so the row is highlighted.
-        rfid_frame = QFrame()
-        rfid_frame.setObjectName("rfidRequired")
-        rfid_frame.setStyleSheet("""
-            #rfidRequired {
-                background-color: #eef4fb;
-                border: 1px solid #1976d2;
-                border-radius: 6px;
-            }
-            /* No background-color on the combo: a stylesheet background on a
-               QComboBox also paints the popup's selected row and overlays the
-               selection highlight with a white box. */
-            #rfidRequired QComboBox[needsSelection="true"] {
-                border: 2px solid #b04a00;
-                border-radius: 4px;
-                padding: 2px 6px;
-            }
-        """)
-        rfid_frame_layout = QVBoxLayout(rfid_frame)
-        rfid_frame_layout.setContentsMargins(8, 6, 8, 6)
-        rfid_frame_layout.setSpacing(4)
-
-        rfid_row = QHBoxLayout()
-        self._rfid_checkbox = CustomCheckBox("RFID Reader")
-        self._rfid_checkbox.setChecked(True)
-        rfid_row.addWidget(self._rfid_checkbox)
-        self._rfid_reader_combo = QComboBox()
-        self._rfid_reader_combo.addItem("Select reader…", "")
-        for module, name in RFID_READERS:
-            self._rfid_reader_combo.addItem(name, module)
-        rfid_row.addWidget(self._rfid_reader_combo, stretch=1)
-        rfid_row.addWidget(self._make_info_icon("rfid"))
-        rfid_frame_layout.addLayout(rfid_row)
-        self._rfid_hint = QLabel("⚠️  Required — choose your RFID reader type.")
-        self._rfid_hint.setStyleSheet("color: #b04a00; font-size: 11px;")
-        rfid_frame_layout.addWidget(self._rfid_hint)
-        self._rfid_manual_hint = QLabel(
-            "ℹ️  This reader has no automatic defaults. After the installation and "
-            "the reboot, the installer will open an additional step that configures "
-            "the reader interactively on the Raspberry Pi."
-        )
-        self._rfid_manual_hint.setWordWrap(True)
-        self._rfid_manual_hint.setStyleSheet("color: #8a6d00; font-size: 11px;")
-        self._rfid_manual_hint.setVisible(False)
-        rfid_frame_layout.addWidget(self._rfid_manual_hint)
-        services_layout.addWidget(rfid_frame)
-
         self._samba_checkbox = self._add_checkbox(
             services_layout, "Samba", False, info_key="samba"
         )
@@ -509,32 +431,10 @@ class OptionsPage(BasePage):
         layout.addStretch()
 
         self._wire_dependencies()
-        self._update_rfid_highlight()
         # Apply the initial enabled/disabled state of the plugin fields
         # (the toggled signals do not fire for the constructor defaults).
         self._on_spotify_toggled(self._spotify_checkbox.isChecked())
         self._on_jellyfin_toggled(self._jellyfin_checkbox.isChecked())
-
-    def _update_rfid_highlight(self, *_args):
-        """Mark the reader combo (orange border) while a choice is required.
-
-        RFID is enabled by default but has no pre-selected module, so the user
-        must actively choose a reader type (or disable the reader).
-        """
-        needed = self._rfid_checkbox.isChecked() and not self._rfid_reader_combo.currentData()
-        self._rfid_reader_combo.setProperty("needsSelection", needed)
-        self._rfid_reader_combo.style().unpolish(self._rfid_reader_combo)
-        self._rfid_reader_combo.style().polish(self._rfid_reader_combo)
-        self._rfid_hint.setVisible(needed)
-        self._update_rfid_manual_hint()
-
-    def _update_rfid_manual_hint(self, *_args):
-        """Show a hint when a reader requiring on-Pi configuration is selected."""
-        needs_manual = (
-            self._rfid_checkbox.isChecked()
-            and self._rfid_reader_combo.currentData() in RFID_MANUAL_READERS
-        )
-        self._rfid_manual_hint.setVisible(needs_manual)
 
     def _make_info_icon(self, key):
         """Return an InfoIcon for the given OPTION_INFO key."""
@@ -557,12 +457,6 @@ class OptionsPage(BasePage):
         return cb
 
     def _wire_dependencies(self):
-        self._rfid_checkbox.toggled.connect(
-            lambda checked: self._rfid_reader_combo.setEnabled(checked)
-        )
-        self._rfid_checkbox.toggled.connect(self._update_rfid_highlight)
-        self._rfid_reader_combo.currentIndexChanged.connect(self._update_rfid_highlight)
-        self._rfid_reader_combo.currentIndexChanged.connect(self._update_rfid_manual_hint)
         self._webapp_checkbox.toggled.connect(self._on_webapp_toggled)
         self._autohotspot_checkbox.toggled.connect(self._on_autohotspot_toggled)
         # A non-upstream source requires the development WebApp bundle.
@@ -682,12 +576,9 @@ class OptionsPage(BasePage):
         self._mpd_checkbox.setChecked(self.state.setup_mpd)
         self._mpd_overwrite_checkbox.setChecked(self.state.enable_mpd_overwrite_install)
         self._update_os_checkbox.setChecked(self.state.update_raspi_os)
-        self._rfid_checkbox.setChecked(self.state.enable_rfid_reader)
         self._samba_checkbox.setChecked(self.state.enable_samba)
         self._webapp_checkbox.setChecked(self.state.enable_webapp)
         self._kiosk_checkbox.setChecked(self.state.enable_kiosk_mode)
-        self._set_combo_data(self._rfid_reader_combo, self.state.rfid_reader_module)
-        self._update_rfid_manual_hint()
         self._set_combo_data(self._hifiberry_combo, self.state.audio_hifiberry_board)
         self._set_combo_data(self._webapp_bundle_combo, self.state.enable_webapp_prod_download)
         # The source rule wins over the stored value: a non-upstream source
@@ -753,12 +644,6 @@ class OptionsPage(BasePage):
                 return (False, f"The URL points to repository '{repo}', but the "
                                "installer installs RPi-Jukebox-RFID. Please use a "
                                "URL for RPi-Jukebox-RFID.")
-        if self._rfid_checkbox.isChecked() and not self._rfid_reader_combo.currentData():
-            return (False, "RFID reader is enabled — please select a reader type "
-                           "or disable the RFID reader.")
-        # Readers without module defaults are not a validation error: the wizard
-        # runs the interactive configuration as an additional step after the
-        # installation and reboot (see ReaderConfigPage).
         if self._spotify_checkbox.isChecked() and not self._spotify_client_id_input.text().strip():
             return (False, "Spotify is enabled — please enter the Spotify developer app "
                            "client ID.")
@@ -789,8 +674,6 @@ class OptionsPage(BasePage):
         self.state.setup_mpd = self._mpd_checkbox.isChecked()
         self.state.enable_mpd_overwrite_install = self._mpd_overwrite_checkbox.isChecked()
         self.state.update_raspi_os = self._update_os_checkbox.isChecked()
-        self.state.enable_rfid_reader = self._rfid_checkbox.isChecked()
-        self.state.rfid_reader_module = self._rfid_reader_combo.currentData() or ""
         self.state.enable_samba = self._samba_checkbox.isChecked()
         self.state.enable_webapp = self._webapp_checkbox.isChecked()
         self.state.enable_kiosk_mode = self._kiosk_checkbox.isChecked()

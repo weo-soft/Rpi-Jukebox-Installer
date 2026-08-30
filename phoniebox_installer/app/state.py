@@ -71,6 +71,12 @@ class InstallerState:
     enable_mpd_overwrite_install: bool = True
     enable_rfid_reader: bool = True
     rfid_reader_module: str = ""    # real reader module name (e.g., "pn532_i2c_py532")
+    #: Reader-specific parameters (e.g. {"device_path": "usb:072f:2200"}),
+    #: serialized to RFID_READER_PARAMS as "key=value;key=value".
+    rfid_reader_params: dict = field(default_factory=dict)
+    #: Dependency handling for the reader: "auto" (install requirements.txt +
+    #: setup.inc.sh) or "no" (skip).
+    rfid_reader_deps: str = "auto"
     enable_samba: bool = False
     enable_webapp: bool = True
     enable_kiosk_mode: bool = False

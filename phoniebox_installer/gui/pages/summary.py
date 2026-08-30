@@ -124,10 +124,19 @@ class SummaryPage(BasePage):
             f"Fork: {s.git_user} / Branch: {s.git_branch}"
         )
 
+        rfid_line = f"RFID Reader: {s.rfid_reader_module or 'none'}"
+        if s.rfid_reader_module:
+            if s.rfid_reader_params:
+                params_str = "; ".join(
+                    f"{key}={value}" for key, value in s.rfid_reader_params.items()
+                )
+                rfid_line += f" ({params_str})"
+            rfid_line += f" / deps: {s.rfid_reader_deps}"
+
         self._summary_labels["options"].setText(
             f"Static IP: {s.enable_static_ip}, IPv6 disabled: {s.disable_ipv6}, "
             f"Bluetooth disabled: {s.disable_bluetooth}, MPD: {s.setup_mpd}\n"
-            f"RFID Reader: {s.rfid_reader_module or 'none'}\n"
+            f"{rfid_line}\n"
             f"WebApp: {s.enable_webapp} / Kiosk: {s.enable_kiosk_mode} / Samba: {s.enable_samba}"
         )
 

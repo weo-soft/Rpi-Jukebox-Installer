@@ -45,15 +45,6 @@ def test_option_checkboxes_toggle_state(qapp):
     assert page.state.enable_samba is True
 
 
-def test_rfid_reader_type_dropdown(qapp):
-    """Selecting an RFID reader updates state.rfid_reader_module."""
-    page = _make_page()
-    idx = page._rfid_reader_combo.findData("pn532_i2c_py532")
-    page._rfid_reader_combo.setCurrentIndex(idx)
-    page.on_leave()
-    assert page.state.rfid_reader_module == "pn532_i2c_py532"
-
-
 def test_hifiberry_board_dropdown(qapp):
     """Selecting a HiFiBerry board updates state.audio_hifiberry_board."""
     page = _make_page()
@@ -69,74 +60,6 @@ def test_kiosk_disabled_without_webapp(qapp):
     page._webapp_checkbox.setChecked(False)
     assert not page._kiosk_checkbox.isEnabled()
     assert not page._kiosk_checkbox.isChecked()
-
-
-def test_rfid_module_required_when_enabled(qapp):
-    """RFID enabled without a reader module → validation fails."""
-    page = _make_page()
-    page._rfid_checkbox.setChecked(True)
-    page._rfid_reader_combo.setCurrentIndex(0)  # placeholder, empty data
-    valid, msg = page.validate()
-    assert valid is False
-    assert msg  # helpful message, not empty
-    page._rfid_checkbox.setChecked(False)
-    valid, _ = page.validate()
-    assert valid is True
-
-
-def test_rfid_manual_reader_allows_continue(qapp):
-    """Readers without module defaults (e.g. generic_usb) pass validation.
-
-    They are configured in an additional wizard step after installation and
-    reboot, so selecting them must not block the wizard.
-    """
-    page = _make_page()
-    idx = page._rfid_reader_combo.findData("generic_usb")
-    page._rfid_reader_combo.setCurrentIndex(idx)
-    valid, msg = page.validate()
-    assert valid is True
-    assert msg == ""
-
-    # A reader with module defaults (pn532_i2c_py532) passes validation too
-    idx = page._rfid_reader_combo.findData("pn532_i2c_py532")
-    page._rfid_reader_combo.setCurrentIndex(idx)
-    valid, _ = page.validate()
-    assert valid is True
-
-
-def test_rfid_manual_reader_hint_points_to_additional_step(qapp):
-    """The hint for manual readers references the additional wizard step."""
-    page = _make_page()
-    idx = page._rfid_reader_combo.findData("generic_usb")
-    page._rfid_reader_combo.setCurrentIndex(idx)
-
-    text = page._rfid_manual_hint.text()
-    assert "additional step" in text
-    # The user is not told to configure manually anymore.
-    assert "manually" not in text.lower()
-    assert "run_register_rfid_reader.py" not in text
-
-
-def test_rfid_manual_reader_shows_hint(qapp):
-    """Selecting a manual-only reader reveals the configuration hint."""
-    page = _make_page()
-    assert page._rfid_manual_hint.isHidden() is True
-
-    idx = page._rfid_reader_combo.findData("generic_usb")
-    page._rfid_reader_combo.setCurrentIndex(idx)
-    assert page._rfid_manual_hint.isHidden() is False
-
-    idx = page._rfid_reader_combo.findData("pn532_i2c_py532")
-    page._rfid_reader_combo.setCurrentIndex(idx)
-    assert page._rfid_manual_hint.isHidden() is True
-
-    # Disabling RFID also hides the hint
-    page._rfid_reader_combo.setCurrentIndex(
-        page._rfid_reader_combo.findData("generic_usb")
-    )
-    assert page._rfid_manual_hint.isHidden() is False
-    page._rfid_checkbox.setChecked(False)
-    assert page._rfid_manual_hint.isHidden() is True
 
 
 def test_plugin_default_values(qapp):
@@ -169,7 +92,6 @@ def test_plugin_fields_disabled_until_enabled(qapp):
 def test_spotify_validation_requires_client_id(qapp):
     """Spotify enabled without a client ID → validation fails."""
     page = _make_page()
-    page._rfid_checkbox.setChecked(False)  # satisfy the RFID requirement
     page._spotify_checkbox.setChecked(True)
     page._spotify_client_id_input.setText("")
     valid, _ = page.validate()
@@ -183,7 +105,6 @@ def test_spotify_validation_requires_client_id(qapp):
 def test_jellyfin_validation(qapp):
     """Jellyfin enabled requires host and exactly one auth method."""
     page = _make_page()
-    page._rfid_checkbox.setChecked(False)  # satisfy the RFID requirement
     page._jellyfin_checkbox.setChecked(True)
     valid, _ = page.validate()
     assert valid is False  # host missing
@@ -347,6 +268,9 @@ def test_on_enter_non_upstream_state_selects_true(qapp):
         enable_webapp_prod_download="release-only",
     )
     page = OptionsPage(state, EventBus())
+    # Pre-populate the branch cache so on_enter() does not start a real
+    # GitHub fetch worker thread (deterministic, no network dependency).
+    page._branch_cache["weo-soft"] = ["future3/develop"]
     page.on_enter()
     assert page._webapp_bundle_combo.currentData() == "true"
 
@@ -468,26 +392,6 @@ def test_services_audio_left_system_right(qapp):
     assert right_widget.title() == "System Options"
 
 
-def test_rfid_highlight_until_selection(qapp):
-    """The RFID combo is flagged (and the hint shown) until a choice is made."""
-    page = _make_page()
-    assert page._rfid_reader_combo.property("needsSelection") is True
-    assert page._rfid_hint.isHidden() is False
-
-    idx = page._rfid_reader_combo.findData("rc522_spi")
-    page._rfid_reader_combo.setCurrentIndex(idx)
-    assert page._rfid_reader_combo.property("needsSelection") is False
-    assert page._rfid_hint.isHidden() is True
-
-
-def test_rfid_highlight_cleared_when_disabled(qapp):
-    """Disabling the RFID reader clears the required-highlight."""
-    page = _make_page()
-    page._rfid_checkbox.setChecked(False)
-    assert page._rfid_reader_combo.property("needsSelection") is False
-    assert page._rfid_hint.isHidden() is True
-
-
 def test_source_group_collapsed_by_default(qapp):
     """The developer-focused Phoniebox Source group starts collapsed."""
     page = _make_page()
@@ -518,25 +422,10 @@ def test_every_option_entry_has_info_icon(qapp):
     """Each option entry has an info icon with a description tooltip."""
     page = _make_page()
     icons = page.findChildren(InfoIcon)
-    # System (8) + Services (Samba, WebApp, Kiosk) + RFID row + Audio +
-    # Plugins (Spotify, Jellyfin) + Source (URL, fork, branch, bundle).
-    assert len(icons) == 19
+    # System (8) + Services (Samba, WebApp, Kiosk) + Audio + Plugins
+    # (Spotify, Jellyfin) + Source (URL, fork, branch, bundle). The RFID
+    # reader lives on its own page now (see rfid_reader.py).
+    assert len(icons) == 18
     for icon in icons:
         assert icon._description, "info icon without a description"
         assert len(icon._description) > 20, "description too short to be useful"
-
-
-def test_rfid_combo_shows_reader_names(qapp):
-    """The reader dropdown shows display names, the module stays as data."""
-    page = _make_page()
-    texts = [page._rfid_reader_combo.itemText(i)
-             for i in range(page._rfid_reader_combo.count())]
-    assert "PN532 reader via I2C using py532 library" in texts
-    assert "MFRC522 via SPI" in texts
-    assert "pn532_i2c_py532" not in texts  # no python package names
-
-    idx = page._rfid_reader_combo.findData("pn532_i2c_py532")
-    assert idx >= 0
-    page._rfid_reader_combo.setCurrentIndex(idx)
-    page.on_leave()
-    assert page.state.rfid_reader_module == "pn532_i2c_py532"
