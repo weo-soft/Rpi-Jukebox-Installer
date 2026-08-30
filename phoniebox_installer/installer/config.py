@@ -12,7 +12,7 @@ Uses ruamel.yaml for consistent YAML handling with the Phoniebox core.
 
 import os
 import logging
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, asdict, field
 from pathlib import Path
 from typing import List
 
@@ -48,6 +48,12 @@ class InstallationOptions:
     enable_mpd_overwrite_install: bool = True
     enable_rfid_reader: bool = True
     rfid_reader_module: str = ""    # real reader module name (e.g., "pn532_i2c_py532")
+    #: Reader-specific parameters (e.g. {"device_path": "usb:072f:2200"}),
+    #: serialized to RFID_READER_PARAMS as "key=value;key=value".
+    rfid_reader_params: dict = field(default_factory=dict)
+    #: Dependency handling for the reader: "auto" (install requirements.txt +
+    #: setup.inc.sh) or "no" (skip).
+    rfid_reader_deps: str = "auto"
     enable_samba: bool = False
     enable_webapp: bool = True
     enable_kiosk_mode: bool = False
@@ -63,6 +69,22 @@ class InstallationOptions:
 
     # === Plugins (future placeholders) ===
     selected_plugins: List[str] = field(default_factory=list)
+
+
+def _format_rfid_params(params: dict) -> str:
+    """Serialize reader parameters as ``key=value;key=value``.
+
+    Boolean values are rendered as 'true'/'false' so the shell-sourced config
+    file stays unambiguous. Returns "" when no parameters are set.
+    """
+    if not params:
+        return ""
+    parts = []
+    for key, value in params.items():
+        if isinstance(value, bool):
+            value = "true" if value else "false"
+        parts.append(f"{key}={value}")
+    return ";".join(parts)
 
 
 class ConfigManager:
@@ -184,6 +206,8 @@ class ConfigManager:
                 "enable_mpd_overwrite_install": state.enable_mpd_overwrite_install,
                 "enable_rfid_reader": state.enable_rfid_reader,
                 "rfid_reader_module": state.rfid_reader_module,
+                "rfid_reader_params": state.rfid_reader_params,
+                "rfid_reader_deps": state.rfid_reader_deps,
                 "enable_samba": state.enable_samba,
                 "enable_webapp": state.enable_webapp,
                 "enable_kiosk_mode": state.enable_kiosk_mode,
@@ -225,6 +249,8 @@ class ConfigManager:
             ("ENABLE_MPD_OVERWRITE_INSTALL", state.enable_mpd_overwrite_install),
             ("ENABLE_RFID_READER", state.enable_rfid_reader),
             ("RFID_READER_MODULE", state.rfid_reader_module),
+            ("RFID_READER_PARAMS", _format_rfid_params(state.rfid_reader_params)),
+            ("RFID_READER_DEPS", state.rfid_reader_deps),
             ("ENABLE_SAMBA", state.enable_samba),
             ("ENABLE_WEBAPP", state.enable_webapp),
             ("ENABLE_KIOSK_MODE", state.enable_kiosk_mode),

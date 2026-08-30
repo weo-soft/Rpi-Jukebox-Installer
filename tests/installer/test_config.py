@@ -84,6 +84,54 @@ def test_generate_install_config_env(tmp_path):
     assert "HIFIBERRY_BOARD='hifiberry-dacplus'" in env
 
 
+def test_generate_install_config_env_rfid_reader(tmp_path):
+    """RFID reader module/params/deps are exported to the flat config file."""
+    cfg = ConfigManager(config_path=tmp_path / "c.yaml")
+    state = InstallerState(
+        enable_rfid_reader=True,
+        rfid_reader_module="generic_nfcpy",
+        rfid_reader_params={"device_path": "usb:072f:2200"},
+        rfid_reader_deps="auto",
+    )
+    env = cfg.generate_install_config_env(state)
+    assert "ENABLE_RFID_READER=true" in env
+    assert "RFID_READER_MODULE='generic_nfcpy'" in env
+    assert "RFID_READER_PARAMS='device_path=usb:072f:2200'" in env
+    assert "RFID_READER_DEPS='auto'" in env
+
+
+def test_generate_install_config_env_rfid_params_bool(tmp_path):
+    """Boolean reader parameters are serialized as true/false."""
+    cfg = ConfigManager(config_path=tmp_path / "c.yaml")
+    state = InstallerState(
+        rfid_reader_module="rc522_spi",
+        rfid_reader_params={
+            "spi_ce": 0,
+            "pin_irq": 24,
+            "mode_legacy": True,
+            "log_all_cards": False,
+        },
+    )
+    env = cfg.generate_install_config_env(state)
+    assert ("RFID_READER_PARAMS='spi_ce=0;pin_irq=24;mode_legacy=true;"
+            "log_all_cards=false'" in env)
+
+
+def test_generate_install_config_env_rfid_disabled(tmp_path):
+    """Disabled RFID reader exports no params — only the boolean flag."""
+    cfg = ConfigManager(config_path=tmp_path / "c.yaml")
+    state = InstallerState(
+        enable_rfid_reader=False,
+        rfid_reader_module="",
+        rfid_reader_params={},
+    )
+    env = cfg.generate_install_config_env(state)
+    assert "ENABLE_RFID_READER=false" in env
+    assert "RFID_READER_MODULE=" not in env
+    assert "RFID_READER_PARAMS=" not in env
+    assert "RFID_READER_DEPS='auto'" in env
+
+
 def test_language_get_set(tmp_path):
     """language property reads/writes the language setting."""
     cfg = ConfigManager(config_path=tmp_path / "c.yaml")
