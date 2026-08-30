@@ -6,7 +6,7 @@ that is passed between wizard pages. Pages read from this state
 to populate their fields and write to it on validation/save.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 

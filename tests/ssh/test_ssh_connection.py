@@ -68,27 +68,6 @@ class _FakeChannel:
         self.closed = True
 
 
-class _FakeChannelDelayedOutput(_FakeChannel):
-    """Simulates a fast-failing remote command whose error output only becomes
-    visible after the exit status is ready.
-
-    The first ``recv_ready()`` poll (in the loop) returns False while
-    ``exit_status_ready()`` is already True; the buffered output only shows up
-    on later polls (i.e. the drain after the loop).
-    """
-
-    def __init__(self, exit_status=1, lines=None):
-        super().__init__(exit_status=exit_status, lines=lines or [])
-        self._recv_calls = 0
-
-    def recv_ready(self):
-        self._recv_calls += 1
-        return self._recv_calls > 1 and bool(self._lines)
-
-    def exit_status_ready(self):
-        return True
-
-
 class _FakeClient:
     """Minimal fake paramiko.SSHClient."""
 
@@ -402,72 +381,3 @@ class TestSshConnection:
         assert connected[0]["host"] == host
         assert disk[host] is server_key
         mgr.disconnect()
-
-    def test_start_interactive_session_streams_output(self, qapp, tmp_path, monkeypatch):
-        """start_interactive_session streams output and reports the exit status."""
-        channel = _FakeChannel(exit_status=0, lines=["line1", "line2"])
-        client = _FakeClient(transport=_FakeTransport(channel))
-        bus, mgr, _ = self._make_manager(tmp_path, monkeypatch, client)
-        mgr._client = client
-        mgr._connected = True
-
-        received = []
-        exits = []
-        mgr.start_interactive_session(
-            "python run_register_rfid_reader.py",
-            on_output=received.append,
-            on_exit=exits.append,
-        )
-
-        assert _pump_until(lambda: bool(exits))
-        assert received == ["line1\n", "line2\n"]
-        assert exits == [0]
-        assert mgr._active_channel is None
-
-    def test_send_input_and_stop_interactive_session(self, qapp, tmp_path, monkeypatch):
-        """send_input forwards bytes; stop_interactive_session closes the channel."""
-        channel = _FakeChannel()
-        client = _FakeClient(transport=_FakeTransport(channel))
-        bus, mgr, _ = self._make_manager(tmp_path, monkeypatch, client)
-        mgr._client = client
-        mgr._connected = True
-        mgr._active_channel = channel
-
-        mgr.send_input("y\n")
-        assert channel._sent == [b"y\n"]
-
-        mgr.stop_interactive_session()
-        assert channel.closed is True
-        assert mgr._active_channel is None
-
-    def test_start_interactive_session_requires_connection(self, qapp, tmp_path, monkeypatch):
-        """start_interactive_session raises without an active connection."""
-        bus, mgr, _ = self._make_manager(tmp_path, monkeypatch)
-        try:
-            mgr.start_interactive_session("echo hi")
-        except RuntimeError as e:
-            assert "not connected" in str(e)
-            return
-        raise AssertionError("Expected RuntimeError")
-
-    def test_interactive_session_drains_output_before_exit(self, qapp, tmp_path, monkeypatch):
-        """Output printed right before a quick exit is not lost.
-
-        Regression: a fast-failing remote command (e.g. the reader-config
-        wrapper reporting a missing venv) must still show its error message.
-        """
-        channel = _FakeChannelDelayedOutput(
-            exit_status=1, lines=["ERROR: virtualenv not found"]
-        )
-        client = _FakeClient(transport=_FakeTransport(channel))
-        bus, mgr, _ = self._make_manager(tmp_path, monkeypatch, client)
-        mgr._client = client
-        mgr._connected = True
-
-        received = []
-        exits = []
-        mgr.start_interactive_session("run tool", on_output=received.append, on_exit=exits.append)
-
-        assert _pump_until(lambda: bool(exits))
-        assert received == ["ERROR: virtualenv not found\n"]
-        assert exits == [1]

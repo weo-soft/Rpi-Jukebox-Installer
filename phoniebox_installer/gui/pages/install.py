@@ -13,7 +13,7 @@ from PySide6.QtGui import QDesktopServices
 
 from phoniebox_installer.gui.pages.base import BasePage
 from phoniebox_installer.gui.widgets import CustomCheckBox
-from phoniebox_installer.app.events import InstallEvents, WizardEvents
+from phoniebox_installer.app.events import InstallEvents
 
 #: Seconds the page waits after a successful install before auto-rebooting.
 REBOOT_COUNTDOWN_SECONDS = 30
@@ -39,7 +39,6 @@ class InstallPage(BasePage):
         self._reboot_sent = False
         self._reboot_cancelled = False
         self._seen_down = False  # True once the Pi went offline during reboot
-        self._advanced_to_reader = False  # True once auto-advanced to reader config
 
         self._timer = QTimer(self)
         self._timer.setInterval(1000)
@@ -146,7 +145,6 @@ class InstallPage(BasePage):
         self._reboot_sent = False
         self._reboot_cancelled = False
         self._seen_down = False
-        self._advanced_to_reader = False
         self._countdown_label.setVisible(False)
         self._reboot_spinner.setVisible(False)
         self._restart_now_btn.setVisible(False)
@@ -316,41 +314,15 @@ class InstallPage(BasePage):
                 self._countdown_label.setStyleSheet(
                     "font-size: 20px; font-weight: bold; color: #2a7d2a;"
                 )
-                if (self.controller is not None
-                        and getattr(self.controller, "needs_reader_config", lambda: False)()):
-                    self._countdown_label.setText(
-                        "✅ Restart complete — the Raspberry Pi is back online. "
-                        "Opening the RFID reader configuration…"
-                    )
-                    self._webapp_btn.setEnabled(True)
-                    self._webapp_btn.setText("🌐 Open Web Interface")
-                    self._advance_to_reader_config()
-                else:
-                    self._countdown_label.setText(
-                        "✅ Restart complete — the Raspberry Pi is back online. "
-                        "You can now close the installer."
-                    )
-                    self._webapp_btn.setEnabled(True)
-                    self._webapp_btn.setText("🌐 Open Web Interface")
+                self._countdown_label.setText(
+                    "✅ Restart complete — the Raspberry Pi is back online. "
+                    "You can now close the installer."
+                )
+                self._webapp_btn.setEnabled(True)
+                self._webapp_btn.setText("🌐 Open Web Interface")
             # else: still up from before the reboot took effect — keep polling.
         else:
             self._seen_down = True
-
-    def _advance_to_reader_config(self):
-        """Auto-advance to the next page once the Pi is back online.
-
-        The wizard listens for ``WizardEvents.ADVANCE`` and jumps to the next
-        *relevant* page (the reader configuration when a manually configured
-        reader was selected). The page_id guard makes sure this request only
-        applies while the install page is active. Published only once: the
-        availability poll may still have an in-flight request queued after the
-        timer was stopped, which would otherwise trigger a duplicate
-        navigation.
-        """
-        if self._advanced_to_reader:
-            return
-        self._advanced_to_reader = True
-        self.event_bus.publish(WizardEvents.ADVANCE, {"page_id": self.page_id})
 
     def _open_webapp(self):
         url = self.state.webapp_url or f"http://{self.state.target_host}"

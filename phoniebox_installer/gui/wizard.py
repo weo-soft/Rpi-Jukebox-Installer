@@ -202,9 +202,8 @@ class Wizard(QWidget):
                 QMessageBox.warning(self, "Validation Error", error_msg)
             return
 
-        # Jump to the next relevant page (skipping pages that are not part of
-        # the current flow, e.g. the reader configuration when no manual
-        # reader was selected).
+        # Jump to the next relevant page (skipping pages that declare
+        # themselves irrelevant for the current flow).
         next_index = self._next_relevant_index(self._current_index + 1)
         if next_index == -1:
             # Commit all pages
