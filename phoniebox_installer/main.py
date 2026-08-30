@@ -130,6 +130,7 @@ class MainWindow(QMainWindow):
         from phoniebox_installer.gui.pages.discover import DiscoverPage
         from phoniebox_installer.gui.pages.ssh import SshCredentialsPage
         from phoniebox_installer.gui.pages.options import OptionsPage
+        from phoniebox_installer.gui.pages.rfid_reader import RfidReaderPage
         from phoniebox_installer.gui.pages.summary import SummaryPage
         from phoniebox_installer.gui.pages.install import InstallPage
 
@@ -138,6 +139,7 @@ class MainWindow(QMainWindow):
             DiscoverPage,
             SshCredentialsPage,
             OptionsPage,
+            RfidReaderPage,
             SummaryPage,
             InstallPage,
         ]
