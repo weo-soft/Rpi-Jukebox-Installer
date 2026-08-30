@@ -1,12 +1,16 @@
 """Tests for network utilities (PortScanner, GitHub branches)."""
 
+import base64
 import json
 import socket
+import subprocess
 import time
 
 from phoniebox_installer.app.event_bus import EventBus
 from phoniebox_installer.app.events import DiscoveryEvents
-from phoniebox_installer.util.network import PortScanner, fetch_github_branches
+from phoniebox_installer.util.network import (
+    PortScanner, fetch_github_branches, fetch_github_file_text,
+)
 
 
 def _pump_until(predicate, timeout=3.0):
@@ -87,6 +91,27 @@ class _FakeResponse:
         return False
 
 
+class _TextResponse:
+    """Context-manager fake returning a plain-text body (raw.githubusercontent)."""
+
+    def __init__(self, text):
+        self._text = text.encode("utf-8")
+
+    def read(self):
+        return self._text
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def _no_git(*args, **kwargs):
+    """Simulate a machine without git installed (fallback also unavailable)."""
+    raise FileNotFoundError("git not installed")
+
+
 class TestFetchGithubBranches:
     def test_returns_branch_names(self, monkeypatch):
         """Branch names are extracted from the GitHub API payload."""
@@ -115,8 +140,33 @@ class TestFetchGithubBranches:
         assert len(names) == 101
         assert names[-1] == "future3/develop"
 
-    def test_network_error_returns_empty_list(self, monkeypatch):
-        """An offline/error fetch yields an empty list (graceful fallback)."""
+    def test_api_rate_limit_falls_back_to_git(self, monkeypatch):
+        """A rate-limited/offline API falls back to git ls-remote --heads."""
+        def _boom(request, timeout=None):
+            raise OSError("HTTP Error 403: rate limit exceeded")
+
+        monkeypatch.setattr(
+            "phoniebox_installer.util.network.urllib.request.urlopen", _boom
+        )
+        completed = subprocess.CompletedProcess(
+            ["git", "ls-remote", "--heads", "https://github.com/MiczFlor/RPi-Jukebox-RFID.git"],
+            0,
+            stdout=(
+                "1111111111\trefs/heads/future3/main\n"
+                "2222222222\trefs/heads/future3/develop\n"
+            ),
+            stderr="",
+        )
+        monkeypatch.setattr(
+            "phoniebox_installer.util.network.subprocess.run",
+            lambda *args, **kwargs: completed,
+        )
+        assert fetch_github_branches("MiczFlor") == [
+            "future3/main", "future3/develop"
+        ]
+
+    def test_network_error_and_no_git_returns_empty_list(self, monkeypatch):
+        """API down and no git available -> empty list (manual entry)."""
 
         def _boom(request, timeout=None):
             raise OSError("offline")
@@ -124,12 +174,85 @@ class TestFetchGithubBranches:
         monkeypatch.setattr(
             "phoniebox_installer.util.network.urllib.request.urlopen", _boom
         )
+        monkeypatch.setattr(
+            "phoniebox_installer.util.network.subprocess.run", _no_git
+        )
         assert fetch_github_branches("MiczFlor") == []
 
-    def test_non_list_payload_returns_empty_list(self, monkeypatch):
-        """A non-list payload (e.g. 404 message) yields an empty list."""
+    def test_non_list_payload_and_no_git_returns_empty_list(self, monkeypatch):
+        """A non-list payload (e.g. 404 message) and no git -> empty list."""
         monkeypatch.setattr(
             "phoniebox_installer.util.network.urllib.request.urlopen",
             lambda request, timeout=None: _FakeResponse({"message": "Not Found"}),
         )
+        monkeypatch.setattr(
+            "phoniebox_installer.util.network.subprocess.run", _no_git
+        )
         assert fetch_github_branches("does-not-exist") == []
+
+    def test_git_failure_returns_empty_list(self, monkeypatch):
+        """API down and git ls-remote failing -> empty list."""
+        def _boom(request, timeout=None):
+            raise OSError("offline")
+
+        monkeypatch.setattr(
+            "phoniebox_installer.util.network.urllib.request.urlopen", _boom
+        )
+        monkeypatch.setattr(
+            "phoniebox_installer.util.network.subprocess.run",
+            lambda *args, **kwargs: subprocess.CompletedProcess(
+                args[0], 128, stdout="", stderr="repository not found"
+            ),
+        )
+        assert fetch_github_branches("does-not-exist") == []
+
+
+class TestFetchGithubFileText:
+    def test_api_success_decodes_base64(self, monkeypatch):
+        """Content from the contents API is base64-decoded."""
+        payload = {
+            "content": base64.b64encode(
+                b"#!/usr/bin/env bash\n--config\n"
+            ).decode("ascii"),
+        }
+        monkeypatch.setattr(
+            "phoniebox_installer.util.network.urllib.request.urlopen",
+            lambda request, timeout=None: _FakeResponse(payload),
+        )
+        text = fetch_github_file_text(
+            "weo-soft", "RPi-Jukebox-RFID",
+            "installation/install-jukebox.sh",
+            "future3/feature/installer-noninteractive-plugins",
+        )
+        assert text is not None
+        assert "--config" in text
+
+    def test_api_rate_limit_falls_back_to_raw(self, monkeypatch):
+        """A rate-limited API falls back to raw.githubusercontent.com."""
+        def _opener(request, timeout=None):
+            if "api.github.com" in request.full_url:
+                raise OSError("HTTP Error 403: rate limit exceeded")
+            return _TextResponse("#!/usr/bin/env bash\n--config\n")
+
+        monkeypatch.setattr(
+            "phoniebox_installer.util.network.urllib.request.urlopen", _opener
+        )
+        text = fetch_github_file_text(
+            "weo-soft", "RPi-Jukebox-RFID",
+            "installation/install-jukebox.sh",
+            "future3/feature/installer-noninteractive-plugins",
+        )
+        assert text is not None
+        assert "--config" in text
+
+    def test_both_fail_returns_none(self, monkeypatch):
+        """API and raw fallback both failing -> None."""
+        def _boom(request, timeout=None):
+            raise OSError("offline")
+
+        monkeypatch.setattr(
+            "phoniebox_installer.util.network.urllib.request.urlopen", _boom
+        )
+        assert fetch_github_file_text(
+            "weo-soft", "RPi-Jukebox-RFID", "installation/install-jukebox.sh", "ref"
+        ) is None

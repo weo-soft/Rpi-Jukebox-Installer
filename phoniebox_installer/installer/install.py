@@ -120,7 +120,11 @@ class InstallManager:
             raise RuntimeError(
                 f"Could not verify install-jukebox.sh at {source_url}. "
                 "Check that the fork and branch are correct and that this "
-                "computer is online."
+                "computer is online. Note: GitHub limits anonymous API access "
+                "to 60 requests/hour per IP — if you hit that limit, wait for "
+                "the hourly reset (see https://api.github.com/rate_limit) or "
+                "set a GITHUB_TOKEN environment variable to raise it to "
+                "5000/hour."
             )
         if "--config" not in script:
             raise RuntimeError(

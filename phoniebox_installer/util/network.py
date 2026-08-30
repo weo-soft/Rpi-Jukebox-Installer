@@ -4,7 +4,9 @@ import base64
 import concurrent.futures
 import json
 import logging
+import os
 import socket
+import subprocess
 import threading
 import urllib.parse
 import urllib.request
@@ -19,19 +21,55 @@ logger = logging.getLogger(__name__)
 MDNS_SERVICE_TYPE = "_ssh._tcp.local."
 
 
+def _github_api_headers() -> dict:
+    """Headers for GitHub REST API calls.
+
+    A personal access token from the environment (``GITHUB_TOKEN`` or
+    ``GH_TOKEN``) is sent as a Bearer token when present — this raises the
+    unauthenticated rate limit from 60 to 5000 requests/hour.
+    """
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "phoniebox-installer",
+    }
+    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
 def fetch_github_branches(owner: str, repo: str = "RPi-Jukebox-RFID",
                           timeout: float = 5.0) -> List[str]:
     """Fetch the branch names of a public GitHub repository.
 
-    Uses the unauthenticated GitHub REST API (subject to the 60 requests/hour
-    per-IP rate limit), so callers should cache the result per ``owner``.
-    Returns an empty list on any failure (offline, private repository, rate
-    limit) so the caller can fall back to manual entry.
+    Tries the GitHub REST API first (with the token from ``GITHUB_TOKEN``/
+    ``GH_TOKEN`` when present). The unauthenticated API is subject to a 60
+    requests/hour per-IP rate limit, so on any API failure (rate limit,
+    offline, ...) the branch list is instead queried with ``git ls-remote
+    --heads`` over HTTPS, which is not subject to that rate limit.
+
+    Returns an empty list on any failure so the caller can fall back to
+    manual entry.
 
     :param owner: GitHub user or organization (e.g. 'MiczFlor')
     :param repo: Repository name (defaults to the Phoniebox repository)
     :param timeout: Per-request timeout in seconds
     :return: List of branch names
+    """
+    branches, api_ok = _fetch_github_branches_api(owner, repo, timeout)
+    if api_ok:
+        return branches
+    logger.debug("GitHub branches API unavailable for %s/%s, "
+                 "falling back to git ls-remote", owner, repo)
+    return _fetch_github_branches_via_git(owner, repo, timeout)
+
+
+def _fetch_github_branches_api(owner: str, repo: str,
+                               timeout: float) -> tuple:
+    """Branch fetch via the GitHub REST API.
+
+    :return: ``(branch_names, api_ok)`` — ``api_ok`` is False when the API
+        could not serve the list (rate limit, offline, HTTP error, ...).
     """
     branches: List[str] = []
     for page in range(1, 6):  # safety cap ~500 branches
@@ -41,37 +79,62 @@ def fetch_github_branches(owner: str, repo: str = "RPi-Jukebox-RFID",
         )
         try:
             request = urllib.request.Request(
-                url,
-                headers={
-                    "Accept": "application/vnd.github+json",
-                    "User-Agent": "phoniebox-installer",
-                },
+                url, headers=_github_api_headers(),
             )
             with urllib.request.urlopen(request, timeout=timeout) as response:
                 data = json.loads(response.read().decode("utf-8"))
         except Exception as exc:
             logger.debug("GitHub branch fetch failed for %s/%s: %s",
                          owner, repo, exc)
-            break
+            return branches, False
         if not isinstance(data, list):
-            break
+            return branches, False
         branches.extend(
             entry["name"]
             for entry in data
             if isinstance(entry, dict) and entry.get("name")
         )
         if len(data) < 100:  # page not full -> no further pages
-            break
+            return branches, True
+    return branches, True
+
+
+def _fetch_github_branches_via_git(owner: str, repo: str,
+                                   timeout: float) -> List[str]:
+    """Fallback branch fetch via ``git ls-remote --heads`` over HTTPS."""
+    url = f"https://github.com/{owner}/{repo}.git"
+    try:
+        result = subprocess.run(
+            ["git", "ls-remote", "--heads", url],
+            capture_output=True, text=True,
+            timeout=max(15.0, timeout + 10.0),
+        )
+    except Exception as exc:
+        logger.debug("git ls-remote failed for %s/%s: %s", owner, repo, exc)
+        return []
+    if result.returncode != 0:
+        logger.debug("git ls-remote failed for %s/%s: %s",
+                     owner, repo, result.stderr.strip())
+        return []
+    branches = []
+    for line in result.stdout.splitlines():
+        _, _, name = line.partition("\t")
+        prefix = "refs/heads/"
+        if name.startswith(prefix):
+            branches.append(name[len(prefix):])
     return branches
 
 
 def fetch_github_file_text(owner: str, repo: str, path: str, ref: str,
                            timeout: float = 5.0) -> Optional[str]:
-    """Fetch a text file's content at a specific ref via the GitHub REST API.
+    """Fetch a text file's content at a specific ref.
 
-    Unlike raw.githubusercontent.com, the contents API serves the exact branch
-    tip (no CDN staleness) and supports refs that contain slashes (e.g.
-    ``future3/feature/installer-noninteractive-config``) via URL-encoding.
+    Tries the GitHub REST contents API first — it serves the exact branch tip
+    (no CDN staleness) and supports refs that contain slashes (e.g.
+    ``future3/feature/installer-noninteractive-config``) via URL-encoding. If
+    the API is unavailable or rate-limited (60 requests/hour per IP
+    unauthenticated), falls back to ``raw.githubusercontent.com``, which is
+    not subject to that rate limit and supports branch refs with slashes too.
 
     :param owner: GitHub user or organization (e.g. 'weo-soft')
     :param repo: Repository name (e.g. 'RPi-Jukebox-RFID')
@@ -81,15 +144,23 @@ def fetch_github_file_text(owner: str, repo: str, path: str, ref: str,
     :param timeout: Per-request timeout in seconds
     :return: File content as text, or ``None`` on any failure
     """
+    content = _fetch_github_file_text_api(owner, repo, path, ref, timeout)
+    if content is not None:
+        return content
+    logger.debug("GitHub contents API unavailable for %s/%s@%s, "
+                 "falling back to raw.githubusercontent.com",
+                 owner, repo, ref)
+    return _fetch_raw_github_file_text(owner, repo, path, ref, timeout)
+
+
+def _fetch_github_file_text_api(owner: str, repo: str, path: str, ref: str,
+                                timeout: float) -> Optional[str]:
+    """File fetch via the GitHub REST contents API (base64-encoded)."""
     query = urllib.parse.urlencode({"ref": ref})
     url = f"https://api.github.com/repos/{owner}/{repo}/contents/{path}?{query}"
     try:
         request = urllib.request.Request(
-            url,
-            headers={
-                "Accept": "application/vnd.github+json",
-                "User-Agent": "phoniebox-installer",
-            },
+            url, headers=_github_api_headers(),
         )
         with urllib.request.urlopen(request, timeout=timeout) as response:
             data = json.loads(response.read().decode("utf-8"))
@@ -103,6 +174,22 @@ def fetch_github_file_text(owner: str, repo: str, path: str, ref: str,
         return base64.b64decode(data["content"]).decode("utf-8", errors="replace")
     except Exception as exc:
         logger.debug("Failed to decode %s/%s@%s content: %s",
+                     owner, repo, ref, exc)
+        return None
+
+
+def _fetch_raw_github_file_text(owner: str, repo: str, path: str, ref: str,
+                                timeout: float) -> Optional[str]:
+    """Fallback file fetch via ``raw.githubusercontent.com``."""
+    url = f"https://raw.githubusercontent.com/{owner}/{repo}/{ref}/{path}"
+    try:
+        request = urllib.request.Request(
+            url, headers={"User-Agent": "phoniebox-installer"},
+        )
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return response.read().decode("utf-8", errors="replace")
+    except Exception as exc:
+        logger.debug("raw.githubusercontent fetch failed for %s/%s@%s: %s",
                      owner, repo, ref, exc)
         return None
 
