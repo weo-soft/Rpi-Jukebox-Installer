@@ -29,7 +29,7 @@ The installer walks you through a seven-step wizard:
    branch, with branch auto-completion from the GitHub API and paste-able branch
    URLs), the web-app bundle mode, and the options:
 
-   - **System:** static IP, disable IPv6, autohotspot, disable Bluetooth,
+   - **System:** static IP, autohotspot, disable Bluetooth,
      disable on-chip audio, update the OS.
    - **MPD:** set up the Music Player Daemon and optionally overwrite its
      config.

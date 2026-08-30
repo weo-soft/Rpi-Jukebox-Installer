@@ -71,11 +71,6 @@ OPTION_INFO = {
         "The installer uses the currently dynamically assigned IP address, "
         "including its gateway and interface.",
     ),
-    "ipv6": (
-        "Disable IPv6",
-        "IPv6 is only needed if you intend to use it.\n"
-        "Otherwise it can be disabled.",
-    ),
     "autohotspot": (
         "Autohotspot",
         "When enabled, this service spins up a WiFi hotspot when the Phoniebox "
@@ -315,9 +310,6 @@ class OptionsPage(BasePage):
         sys_layout = QVBoxLayout(sys_group)
         self._static_ip_checkbox = self._add_checkbox(
             sys_layout, "Static IP", True, info_key="static_ip"
-        )
-        self._ipv6_checkbox = self._add_checkbox(
-            sys_layout, "Disable IPv6", True, info_key="ipv6"
         )
         self._autohotspot_checkbox = self._add_checkbox(
             sys_layout, "Autohotspot", False, info_key="autohotspot"
@@ -569,7 +561,6 @@ class OptionsPage(BasePage):
         self._git_fork_input.setText(self.state.git_user)
         self._git_branch_combo.setCurrentText(self.state.git_branch)
         self._static_ip_checkbox.setChecked(self.state.enable_static_ip)
-        self._ipv6_checkbox.setChecked(self.state.disable_ipv6)
         self._autohotspot_checkbox.setChecked(self.state.enable_autohotspot)
         self._bluetooth_checkbox.setChecked(self.state.disable_bluetooth)
         self._onboard_audio_checkbox.setChecked(self.state.disable_onboard_audio)
@@ -667,7 +658,6 @@ class OptionsPage(BasePage):
         self.state.git_user = self._git_fork_input.text().strip()
         self.state.git_branch = self._git_branch_combo.currentText().strip()
         self.state.enable_static_ip = self._static_ip_checkbox.isChecked()
-        self.state.disable_ipv6 = self._ipv6_checkbox.isChecked()
         self.state.enable_autohotspot = self._autohotspot_checkbox.isChecked()
         self.state.disable_bluetooth = self._bluetooth_checkbox.isChecked()
         self.state.disable_onboard_audio = self._onboard_audio_checkbox.isChecked()

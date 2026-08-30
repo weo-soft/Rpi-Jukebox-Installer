@@ -63,7 +63,6 @@ class InstallerState:
     # =========================================================================
 
     enable_static_ip: bool = True
-    disable_ipv6: bool = True
     enable_autohotspot: bool = False
     disable_bluetooth: bool = True
     disable_onboard_audio: bool = False

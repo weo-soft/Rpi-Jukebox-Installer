@@ -40,7 +40,6 @@ class InstallationOptions:
 
     # === Real customize_options.sh flags ===
     enable_static_ip: bool = True
-    disable_ipv6: bool = True
     enable_autohotspot: bool = False
     disable_bluetooth: bool = True
     disable_onboard_audio: bool = False
@@ -208,7 +207,6 @@ class ConfigManager:
             },
             "options": {
                 "enable_static_ip": state.enable_static_ip,
-                "disable_ipv6": state.disable_ipv6,
                 "enable_autohotspot": state.enable_autohotspot,
                 "disable_bluetooth": state.disable_bluetooth,
                 "disable_onboard_audio": state.disable_onboard_audio,
@@ -266,7 +264,6 @@ class ConfigManager:
             ("GIT_USER", state.git_user),
             ("GIT_BRANCH", state.git_branch),
             ("ENABLE_STATIC_IP", state.enable_static_ip),
-            ("DISABLE_IPv6", state.disable_ipv6),
             ("ENABLE_AUTOHOTSPOT", state.enable_autohotspot),
             ("DISABLE_BLUETOOTH", state.disable_bluetooth),
             ("DISABLE_ONBOARD_AUDIO", state.disable_onboard_audio),

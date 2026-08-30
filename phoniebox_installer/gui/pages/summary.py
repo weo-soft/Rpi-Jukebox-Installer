@@ -134,8 +134,8 @@ class SummaryPage(BasePage):
             rfid_line += f" / deps: {s.rfid_reader_deps}"
 
         self._summary_labels["options"].setText(
-            f"Static IP: {s.enable_static_ip}, IPv6 disabled: {s.disable_ipv6}, "
-            f"Bluetooth disabled: {s.disable_bluetooth}, MPD: {s.setup_mpd}\n"
+            f"Static IP: {s.enable_static_ip}, Bluetooth disabled: "
+            f"{s.disable_bluetooth}, MPD: {s.setup_mpd}\n"
             f"{rfid_line}\n"
             f"WebApp: {s.enable_webapp} / Kiosk: {s.enable_kiosk_mode} / Samba: {s.enable_samba}"
         )

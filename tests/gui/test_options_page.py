@@ -422,10 +422,11 @@ def test_every_option_entry_has_info_icon(qapp):
     """Each option entry has an info icon with a description tooltip."""
     page = _make_page()
     icons = page.findChildren(InfoIcon)
-    # System (8) + Services (Samba, WebApp, Kiosk) + Audio + Plugins
+    # System (7) + Services (Samba, WebApp, Kiosk) + Audio + Plugins
     # (Spotify, Jellyfin) + Source (URL, fork, branch, bundle). The RFID
-    # reader lives on its own page now (see rfid_reader.py).
-    assert len(icons) == 18
+    # reader lives on its own page now (see rfid_reader.py). The IPv6
+    # option was removed (the Phoniebox installer no longer offers it).
+    assert len(icons) == 17
     for icon in icons:
         assert icon._description, "info icon without a description"
         assert len(icon._description) > 20, "description too short to be useful"
