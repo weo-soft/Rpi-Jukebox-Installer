@@ -6,7 +6,6 @@ from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QLabel, QVBoxLayout, QHBoxLayout, QLineEdit,
     QComboBox, QFrame, QGroupBox, QScrollArea, QWidget, QCompleter,
-    QRadioButton, QButtonGroup,
 )
 
 from phoniebox_installer.gui.pages.base import BasePage
@@ -154,10 +153,11 @@ OPTION_INFO = {
         "Jellyfin",
         "Configures the Jellyfin player backend in jukebox.yaml. The Jellyfin\n"
         "media server is not installed — you only connect to an existing one\n"
-        "on your network (e.g. http://jellyfin.local:8096).\n\n"
-        "Authentication: either an API key (Jellyfin Dashboard → API Keys) or\n"
-        "a Jellyfin username + password. The user login honors the library\n"
-        "permissions of that account.",
+        "on your network (e.g. http://jellyfin.local:8096), version 12.0 or\n"
+        "newer.\n\n"
+        "Authentication: the user name and password of a Jellyfin user. The\n"
+        "login token honors that account's library permissions, so a dedicated\n"
+        "user with access to the music library is recommended.",
     ),
 }
 
@@ -388,22 +388,6 @@ class OptionsPage(BasePage):
         )
         jellyfin_layout.addWidget(self._jellyfin_host_input)
 
-        auth_row = QHBoxLayout()
-        self._jellyfin_api_key_radio = QRadioButton("API key")
-        self._jellyfin_api_key_radio.setChecked(True)
-        self._jellyfin_user_radio = QRadioButton("Jellyfin user login")
-        self._auth_group = QButtonGroup(self)
-        self._auth_group.addButton(self._jellyfin_api_key_radio)
-        self._auth_group.addButton(self._jellyfin_user_radio)
-        auth_row.addWidget(self._jellyfin_api_key_radio)
-        auth_row.addWidget(self._jellyfin_user_radio)
-        auth_row.addStretch()
-        jellyfin_layout.addLayout(auth_row)
-
-        self._jellyfin_api_key_input = QLineEdit()
-        self._jellyfin_api_key_input.setPlaceholderText("API key (Jellyfin Dashboard → API Keys)")
-        jellyfin_layout.addWidget(self._jellyfin_api_key_input)
-
         self._jellyfin_username_input = QLineEdit()
         self._jellyfin_username_input.setPlaceholderText("Jellyfin username")
         jellyfin_layout.addWidget(self._jellyfin_username_input)
@@ -462,7 +446,6 @@ class OptionsPage(BasePage):
         # Spotify / Jellyfin plugin fields follow their enable checkbox.
         self._spotify_checkbox.toggled.connect(self._on_spotify_toggled)
         self._jellyfin_checkbox.toggled.connect(self._on_jellyfin_toggled)
-        self._jellyfin_api_key_radio.toggled.connect(self._on_jellyfin_auth_toggled)
 
     def _on_spotify_toggled(self, checked):
         self._spotify_client_id_input.setEnabled(checked)
@@ -471,16 +454,8 @@ class OptionsPage(BasePage):
 
     def _on_jellyfin_toggled(self, checked):
         self._jellyfin_host_input.setEnabled(checked)
-        self._jellyfin_api_key_radio.setEnabled(checked)
-        self._jellyfin_user_radio.setEnabled(checked)
-        self._on_jellyfin_auth_toggled(self._jellyfin_api_key_radio.isChecked())
-
-    def _on_jellyfin_auth_toggled(self, _api_key_selected):
-        api_key_mode = self._jellyfin_api_key_radio.isChecked()
-        enabled = self._jellyfin_checkbox.isChecked()
-        self._jellyfin_api_key_input.setEnabled(enabled and api_key_mode)
-        self._jellyfin_username_input.setEnabled(enabled and not api_key_mode)
-        self._jellyfin_password_input.setEnabled(enabled and not api_key_mode)
+        self._jellyfin_username_input.setEnabled(checked)
+        self._jellyfin_password_input.setEnabled(checked)
 
     def _on_webapp_toggled(self, checked):
         self._kiosk_checkbox.setEnabled(checked)
@@ -644,13 +619,10 @@ class OptionsPage(BasePage):
         if self._jellyfin_checkbox.isChecked():
             if not self._jellyfin_host_input.text().strip():
                 return (False, "Jellyfin is enabled — please enter the Jellyfin server URL.")
-            if self._jellyfin_api_key_radio.isChecked():
-                if not self._jellyfin_api_key_input.text().strip():
-                    return (False, "Jellyfin is enabled — please enter an API key or "
-                                   "switch to the Jellyfin user login.")
-            elif (not self._jellyfin_username_input.text().strip()
-                  or not self._jellyfin_password_input.text()):
-                return (False, "Jellyfin is enabled — please enter username and password.")
+            if (not self._jellyfin_username_input.text().strip()
+                    or not self._jellyfin_password_input.text()):
+                return (False, "Jellyfin is enabled — please enter the Jellyfin "
+                               "user name and password.")
         return (True, "")
 
     def on_leave(self):
@@ -679,6 +651,5 @@ class OptionsPage(BasePage):
         )
         self.state.enable_jellyfin = self._jellyfin_checkbox.isChecked()
         self.state.jellyfin_host = self._jellyfin_host_input.text().strip()
-        self.state.jellyfin_api_key = self._jellyfin_api_key_input.text().strip()
         self.state.jellyfin_username = self._jellyfin_username_input.text().strip()
         self.state.jellyfin_password = self._jellyfin_password_input.text()

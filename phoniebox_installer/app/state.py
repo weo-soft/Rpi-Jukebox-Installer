@@ -98,7 +98,6 @@ class InstallerState:
     # ENABLE_JELLYFIN / JELLYFIN_*.
     enable_jellyfin: bool = False
     jellyfin_host: str = ""
-    jellyfin_api_key: str = ""
     jellyfin_username: str = ""
     jellyfin_password: str = ""
 

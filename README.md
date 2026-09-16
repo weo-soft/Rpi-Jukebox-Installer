@@ -37,8 +37,8 @@ The installer walks you through a seven-step wizard:
      MFRC522, generic NFC/USB), Samba, web app, kiosk mode.
    - **Audio:** select a HiFiBerry board (DAC+, Digi, DAC, Amp).
    - **Plugins:** Spotify (librespot — developer-app client ID, OAuth redirect
-     URI, device name) and Jellyfin (server URL plus API key or
-     username/password login).
+     URI, device name) and Jellyfin (server URL plus the user name and
+     password of a Jellyfin user).
 
 5. **Review** — summary of all choices. If an existing installation was
    detected, you decide whether to back it up or remove it.

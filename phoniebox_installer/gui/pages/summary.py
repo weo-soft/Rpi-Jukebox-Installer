@@ -151,11 +151,7 @@ class SummaryPage(BasePage):
             else "Spotify: off"
         )
         if s.enable_jellyfin:
-            jellyfin = (
-                f"Jellyfin: on ({s.jellyfin_host}, API key)"
-                if s.jellyfin_api_key
-                else f"Jellyfin: on ({s.jellyfin_host}, user {s.jellyfin_username})"
-            )
+            jellyfin = f"Jellyfin: on ({s.jellyfin_host}, user {s.jellyfin_username})"
         else:
             jellyfin = "Jellyfin: off"
         self._summary_labels["plugins"].setText(

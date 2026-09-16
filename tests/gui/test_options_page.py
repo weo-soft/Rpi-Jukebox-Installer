@@ -84,9 +84,8 @@ def test_plugin_fields_disabled_until_enabled(qapp):
 
     page._jellyfin_checkbox.setChecked(True)
     assert page._jellyfin_host_input.isEnabled()
-    # Default auth mode is the API key → API key input active, user login not.
-    assert page._jellyfin_api_key_input.isEnabled()
-    assert not page._jellyfin_username_input.isEnabled()
+    assert page._jellyfin_username_input.isEnabled()
+    assert page._jellyfin_password_input.isEnabled()
 
 
 def test_spotify_validation_requires_client_id(qapp):
@@ -103,29 +102,20 @@ def test_spotify_validation_requires_client_id(qapp):
 
 
 def test_jellyfin_validation(qapp):
-    """Jellyfin enabled requires host and exactly one auth method."""
+    """Jellyfin enabled requires the server URL, user name and password."""
     page = _make_page()
     page._jellyfin_checkbox.setChecked(True)
     valid, _ = page.validate()
     assert valid is False  # host missing
 
     page._jellyfin_host_input.setText("http://jellyfin.local:8096")
-    # API key mode: key required
-    page._jellyfin_api_key_radio.setChecked(True)
     valid, _ = page.validate()
-    assert valid is False
-
-    page._jellyfin_api_key_input.setText("jf-key")
-    valid, _ = page.validate()
-    assert valid is True
-
-    # User login mode: username and password required
-    page._jellyfin_user_radio.setChecked(True)
-    page._jellyfin_api_key_input.setText("")
-    valid, _ = page.validate()
-    assert valid is False
+    assert valid is False  # credentials missing
 
     page._jellyfin_username_input.setText("jelly")
+    valid, _ = page.validate()
+    assert valid is False  # password missing
+
     page._jellyfin_password_input.setText("pw")
     valid, _ = page.validate()
     assert valid is True
@@ -141,7 +131,6 @@ def test_plugin_state_saved_on_leave(qapp):
 
     page._jellyfin_checkbox.setChecked(True)
     page._jellyfin_host_input.setText("http://jellyfin.local:8096")
-    page._jellyfin_user_radio.setChecked(True)
     page._jellyfin_username_input.setText("jelly")
     page._jellyfin_password_input.setText("pw")
 
@@ -152,7 +141,6 @@ def test_plugin_state_saved_on_leave(qapp):
     assert page.state.spotify_device_name == "Kitchen"
     assert page.state.enable_jellyfin is True
     assert page.state.jellyfin_host == "http://jellyfin.local:8096"
-    assert page.state.jellyfin_api_key == ""
     assert page.state.jellyfin_username == "jelly"
     assert page.state.jellyfin_password == "pw"
 

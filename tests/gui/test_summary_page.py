@@ -137,7 +137,7 @@ def test_plugin_state_displayed(qapp):
     page.state.spotify_device_name = "Kitchen"
     page.state.enable_jellyfin = True
     page.state.jellyfin_host = "http://jellyfin.local:8096"
-    page.state.jellyfin_api_key = "jf-key"
+    page.state.jellyfin_username = "jelly"
     page.on_enter()
 
     plugins_text = page._summary_labels["plugins"].text()
@@ -146,13 +146,6 @@ def test_plugin_state_displayed(qapp):
     assert "Kitchen" in plugins_text
     assert "Jellyfin: on" in plugins_text
     assert "http://jellyfin.local:8096" in plugins_text
-    assert "API key" in plugins_text
-
-    # User login is shown instead of the API key when no key is set.
-    page.state.jellyfin_api_key = ""
-    page.state.jellyfin_username = "jelly"
-    page.on_enter()
-    plugins_text = page._summary_labels["plugins"].text()
     assert "user jelly" in plugins_text
 
 

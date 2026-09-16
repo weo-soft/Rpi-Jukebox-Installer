@@ -75,7 +75,8 @@ def test_generate_install_config_yaml_plugins(tmp_path):
         spotify_client_id="abc123",
         enable_jellyfin=True,
         jellyfin_host="http://jellyfin.local:8096",
-        jellyfin_api_key="jf-key",
+        jellyfin_username="jelly",
+        jellyfin_password="pw",
     )
     yaml_dict = cfg.generate_install_config_yaml(state)
     plugins = yaml_dict["plugins"]
@@ -87,7 +88,8 @@ def test_generate_install_config_yaml_plugins(tmp_path):
     }
     assert plugins["jellyfin"]["enable"] is True
     assert plugins["jellyfin"]["host"] == "http://jellyfin.local:8096"
-    assert plugins["jellyfin"]["api_key"] == "jf-key"
+    assert plugins["jellyfin"]["username"] == "jelly"
+    assert plugins["jellyfin"]["password"] == "pw"
 
 
 def test_generate_install_config_env(tmp_path):
@@ -117,7 +119,8 @@ def test_generate_install_config_env_plugins(tmp_path):
         spotify_device_name="Kitchen",
         enable_jellyfin=True,
         jellyfin_host="http://jellyfin.local:8096",
-        jellyfin_api_key="jf-key",
+        jellyfin_username="jelly",
+        jellyfin_password="pw",
     )
     env = cfg.generate_install_config_env(state)
     assert "SETUP_SPOTIFY=true" in env
@@ -126,7 +129,8 @@ def test_generate_install_config_env_plugins(tmp_path):
     assert "SPOTIFY_DEVICE_NAME='Kitchen'" in env
     assert "ENABLE_JELLYFIN=true" in env
     assert "JELLYFIN_HOST='http://jellyfin.local:8096'" in env
-    assert "JELLYFIN_API_KEY='jf-key'" in env
+    assert "JELLYFIN_USERNAME='jelly'" in env
+    assert "JELLYFIN_PASSWORD='pw'" in env
 
 
 def test_generate_install_config_env_plugins_disabled(tmp_path):

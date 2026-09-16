@@ -75,7 +75,6 @@ class InstallationOptions:
     spotify_device_name: str = "Phoniebox"
     enable_jellyfin: bool = False
     jellyfin_host: str = ""
-    jellyfin_api_key: str = ""
     jellyfin_username: str = ""
     jellyfin_password: str = ""
 
@@ -237,7 +236,6 @@ class ConfigManager:
                 "jellyfin": {
                     "enable": state.enable_jellyfin,
                     "host": state.jellyfin_host,
-                    "api_key": state.jellyfin_api_key,
                     "username": state.jellyfin_username,
                     "password": state.jellyfin_password,
                 },
@@ -285,7 +283,6 @@ class ConfigManager:
             ("SPOTIFY_DEVICE_NAME", state.spotify_device_name),
             ("ENABLE_JELLYFIN", state.enable_jellyfin),
             ("JELLYFIN_HOST", state.jellyfin_host),
-            ("JELLYFIN_API_KEY", state.jellyfin_api_key),
             ("JELLYFIN_USERNAME", state.jellyfin_username),
             ("JELLYFIN_PASSWORD", state.jellyfin_password),
             ("EXISTING_INSTALL_ACTION", state.existing_install_action),
